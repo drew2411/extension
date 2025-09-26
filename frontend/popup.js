@@ -1,46 +1,71 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const bioInput = document.getElementById('bio-input');
-  const saveBtn = document.getElementById('save-bio-btn');
-
-  // Load any previously saved bio when the popup opens
-  chrome.storage.local.get(['userBio'], (result) => {
-    if (result.userBio) {
-      bioInput.value = result.userBio;
+document.addEventListener('DOMContentLoaded', function () {
+  // This function will run when the popup is opened.
+  // It finds the active tab and sends its URL to the backend.
+  identifyCurrentTab();
+});
+async function identifyCurrentTab() {
+  const sourceInfoDiv = document.getElementById('source-info');
+  const detailsDiv = document.getElementById('details');
+  sourceInfoDiv.textContent = 'Identifying...';
+  detailsDiv.innerHTML = ''; // Clear previous details
+  // Get the current active tab
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.url) {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/identify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: tab.url }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      const data = await response.json();
+      sourceInfoDiv.textContent = `Source: ${data.source} (${data.content_type})`;
+      // Render details if they exist
+      if (data.details) {
+        let detailsHtml = '';
+        // Sanitize function to prevent basic HTML injection
+        const escape = (str) => str.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+        if (data.source === 'youtube') {
+          detailsHtml = `
+                        <div><strong>Title:</strong> ${escape(data.details.title)}</div>
+                        <div><strong>Channel:</strong> ${escape(data.details.channel_name)}</div>
+                        <p class="bio">${escape(data.details.bio)}</p>
+                        <h4>Top Comments:</h4>
+                    `;
+        } else if (data.source === 'reddit') {
+          detailsHtml = `
+                        <div><strong>Title:</strong> ${escape(data.details.title)}</div>
+                        <div><strong>Subreddit:</strong> ${escape(data.details.subreddit)}</div>
+                        <p class="bio">${escape(data.details.post_contents) || '<i>No post content.</i>'}</p>
+                        <h4>Top Comments:</h4>
+                    `;
+        }
+        if (data.details.comments && data.details.comments.length > 0) {
+          data.details.comments.forEach(comment => {
+            detailsHtml += `
+                            <div class="comment">
+                                <strong>${escape(comment.author)}:</strong>
+                                <div>${comment.text}</div>
+                            </div>
+                        `;
+          });
+        } else {
+          detailsHtml += '<div>No comments found.</div>';
+        }
+        if (data.details.error) {
+          detailsHtml = `<div><strong>Error:</strong> ${data.details.error}</div>`;
+        }
+        detailsDiv.innerHTML = detailsHtml;
+      }
+    } catch (error) {
+      console.error('Error identifying URL:', error);
+      sourceInfoDiv.textContent = 'Error: Could not connect to backend.';
     }
-  });
-
-  // Save the bio when the button is clicked
-  saveBtn.addEventListener('click', () => {
-    const userBio = bioInput.value;
-    chrome.storage.local.set({ 'userBio': userBio }, () => {
-      console.log('Bio saved!');
-      // You can add some visual feedback here, like a temporary "Saved!" message.
-    });
-  });
-  // Add this logic inside your existing `DOMContentLoaded` listener
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const currentUrl = tabs[0].url;
-    console.log('Current URL:', currentUrl);
-  
-    // Now you can send this URL to your Python backend for classification
-    // (You'll add this part later)
-  });
-}); 
-
-const usefulBtn = document.getElementById('useful-btn');
-const uselessBtn = document.getElementById('useless-btn');
-
-usefulBtn.addEventListener('click', () => {
-  sendFeedback('useful');
-});
-
-uselessBtn.addEventListener('click', () => {
-  sendFeedback('useless');
-});
-
-function sendFeedback(feedback) {
-  // This is where you would send the feedback to your Python backend
-  // along with the current URL and other data.
-  console.log('User feedback:', feedback);
-  console.log('Feedback sent to backend for training.');
+  } else {
+    sourceInfoDiv.textContent = 'Could not get URL of the current tab.';
+  }
 }

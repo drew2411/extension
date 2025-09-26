@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Content Identifier</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            width: 300px;
+            padding: 15px;
+            text-align: center;
+        }
+        #source {
+            margin-top: 15px;
+            font-weight: bold;
+            font-size: 1.2em;
+            text-transform: capitalize;
+        }
+        #details {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+            text-align: left;
+            font-size: 0.9em;
+        }
+        #details .bio {
+            white-space: pre-wrap; /* Respects newlines in description */
+            max-height: 100px;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        #details .comment {
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+        }
+        #details div {
+            margin-bottom: 5px;
+        }
+        #details strong {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h3>Identify Page Source</h3>
+    <div id="source-info">Identifying...</div>
+    <div id="details"></div>
+    <script src="popup.js"></script>
+</body>
+</html>

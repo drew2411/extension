@@ -1,8 +1,12 @@
 console.log("Reddit content script injected and running.");
 
 const ANALYSIS_DELAY = 2000;
+const URL_CHECK_INTERVAL = 2000; // 2 seconds
 const RETRY_DELAY = 5000; // 5 seconds
 const MAX_RETRIES = 3;
+
+let lastProcessedUrl = "";
+let currentUrl = window.location.href;
 
 function sendMessageWithRetry(message, retries = MAX_RETRIES) {
     console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
@@ -24,13 +28,18 @@ function sendMessageWithRetry(message, retries = MAX_RETRIES) {
 }
 
 const extractData = () => {
+    if (window.location.href === lastProcessedUrl) {
+        console.log("URL has already been processed. Skipping extraction.");
+        return;
+    }
     console.log(`Attempting to extract data from Reddit URL: ${window.location.href}`);
+    lastProcessedUrl = window.location.href;
+    
     const url = window.location.href;
     let data = { source: 'reddit', comments: [] };
 
     try {
         if (url.includes('/r/') && url.includes('/comments/')) {
-            // Post Page
             console.log("Extracting from a Reddit post page.");
             data.title = document.querySelector('h1')?.innerText;
             data.subreddit = url.split('/r/')[1].split('/')[0];
@@ -53,7 +62,6 @@ const extractData = () => {
             console.log(`Extracted ${data.comments.length} comments.`);
 
         } else if (url.includes('/r/')) {
-            // Subreddit Homepage
             console.log("Extracting from a subreddit homepage.");
             data.subreddit = url.split('/r/')[1].split('/')[0];
             data.title = `Subreddit: r/${data.subreddit}`;
@@ -84,7 +92,6 @@ const extractData = () => {
     }
 };
 
-// Listen for messages from the background script for SPA navigations
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'navigation-completed') {
         console.log(`'navigation-completed' message received. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
@@ -92,6 +99,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// Initial extraction for the first page load
+function handleUrlChange() {
+    console.log("URL change detected. Waiting for analysis delay before extraction.");
+    setTimeout(extractData, ANALYSIS_DELAY);
+}
+
+setInterval(() => {
+    if (window.location.href !== currentUrl) {
+        console.log(`URL changed from '${currentUrl}' to '${window.location.href}'.`);
+        currentUrl = window.location.href;
+        handleUrlChange();
+    }
+}, URL_CHECK_INTERVAL);
+
 console.log(`Initial page load. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
 setTimeout(extractData, ANALYSIS_DELAY);

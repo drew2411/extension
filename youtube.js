@@ -1,8 +1,12 @@
 console.log("YouTube content script injected and running.");
 
 const ANALYSIS_DELAY = 6000; // 6 seconds
+const URL_CHECK_INTERVAL = 2000; // 2 seconds
 const RETRY_DELAY = 5000; // 5 seconds
 const MAX_RETRIES = 3;
+
+let lastProcessedUrl = "";
+let currentUrl = window.location.href;
 
 function sendMessageWithRetry(message, retries = MAX_RETRIES) {
     console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
@@ -24,7 +28,14 @@ function sendMessageWithRetry(message, retries = MAX_RETRIES) {
 }
 
 const extractData = () => {
+    // Prevent re-running on the same page if triggered multiple times
+    if (window.location.href === lastProcessedUrl) {
+        console.log("URL has already been processed. Skipping extraction.");
+        return;
+    }
     console.log("Starting YouTube data extraction...");
+    lastProcessedUrl = window.location.href;
+
     try {
         const titleElement = document.querySelector('h1.ytd-watch-metadata');
         const videoTitle = titleElement ? titleElement.innerText : '';
@@ -73,14 +84,30 @@ const extractData = () => {
     }
 };
 
-// Listen for messages from the background script for SPA navigations
+// This listener remains as a backup trigger from the background script.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'navigation-completed') {
-        console.log(`'navigation-completed' message received for URL: ${message.url}. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
+        console.log(`'navigation-completed' message received. Triggering data extraction.`);
         setTimeout(extractData, ANALYSIS_DELAY);
     }
 });
 
-// Initial extraction for the first page load
+// --- Primary Trigger for SPA Navigation ---
+function handleUrlChange() {
+    console.log("URL change detected. Waiting for analysis delay before extraction.");
+    setTimeout(extractData, ANALYSIS_DELAY);
+}
+
+// Check for URL changes periodically. This is more reliable for SPAs like YouTube.
+setInterval(() => {
+    if (window.location.href !== currentUrl) {
+        console.log(`URL changed from '${currentUrl}' to '${window.location.href}'.`);
+        currentUrl = window.location.href;
+        handleUrlChange();
+    }
+}, URL_CHECK_INTERVAL);
+
+
+// --- Initial Page Load Trigger ---
 console.log(`Initial page load. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
 setTimeout(extractData, ANALYSIS_DELAY);

@@ -1,6 +1,27 @@
 console.log("Reddit content script injected and running.");
 
 const ANALYSIS_DELAY = 2000;
+const RETRY_DELAY = 5000; // 5 seconds
+const MAX_RETRIES = 3;
+
+function sendMessageWithRetry(message, retries = MAX_RETRIES) {
+    console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
+    chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+            const errorMessage = chrome.runtime.lastError.message;
+            if (errorMessage.includes("Receiving end does not exist") && retries > 0) {
+                console.warn(`Connection to background script failed. Retrying in ${RETRY_DELAY / 1000} seconds...`);
+                setTimeout(() => {
+                    sendMessageWithRetry(message, retries - 1);
+                }, RETRY_DELAY);
+            } else {
+                console.error(`Failed to send message after multiple retries: ${errorMessage}`, message);
+            }
+        } else {
+            console.log("Message sent successfully to background script.");
+        }
+    });
+}
 
 const extractData = () => {
     console.log(`Attempting to extract data from Reddit URL: ${window.location.href}`);
@@ -14,11 +35,9 @@ const extractData = () => {
             data.title = document.querySelector('h1')?.innerText;
             data.subreddit = url.split('/r/')[1].split('/')[0];
             
-            // This selector targets the main post body.
             const postBody = document.querySelector('div[data-test-id="post-content"]');
             if (postBody) {
                 data.content = '';
-                // Extract text from all paragraphs within the post body.
                 postBody.querySelectorAll('p').forEach(p => data.content += p.innerText + '\n');
                 data.content = data.content.trim();
                 console.log(`Extracted post content: ${data.content.substring(0, 100)}...`);
@@ -26,7 +45,6 @@ const extractData = () => {
                 console.warn("Could not find post content body.");
             }
 
-            // This selector is more specific for the comment text.
             document.querySelectorAll('div[data-testid="comment"] p').forEach(commentElement => {
                 if (data.comments.length < 5) {
                     data.comments.push(commentElement.innerText);
@@ -40,7 +58,6 @@ const extractData = () => {
             data.subreddit = url.split('/r/')[1].split('/')[0];
             data.title = `Subreddit: r/${data.subreddit}`;
 
-            // This selector targets the sidebar description.
             const sidebar = document.querySelector('div[data-testid="frontpage-sidebar"]');
             if (sidebar) {
                 const descriptionElement = sidebar.querySelector('p');
@@ -58,7 +75,7 @@ const extractData = () => {
 
         if (data.subreddit) {
             console.log("Successfully extracted data from reddit.js:", data);
-            chrome.runtime.sendMessage({ type: 'contentData', data: data });
+            sendMessageWithRetry({ type: 'contentData', data: data });
         } else {
             console.log("Could not extract subreddit from URL. No data sent.");
         }

@@ -26,14 +26,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 });
 
-// Listen for SPA navigations
+// 2. Listen for SPA navigations
 chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
     console.log("History state updated:", details.url);
 
     if (details.url && details.url.includes("youtube.com/watch")) {
         console.log(`YouTube navigation detected. Re-injecting content script into tab ${details.tabId}`);
         // Programmatically re-inject the content script to ensure it runs on SPA navigation.
-        // This is more reliable than messaging for complex sites like YouTube.
         chrome.scripting.executeScript({
             target: { tabId: details.tabId },
             files: ['youtube.js']
@@ -56,7 +55,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
     }
 });
 
-// 2. Listen for messages from content scripts or the popup
+// 3. Listen for messages from content scripts or the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("Received message:", message.type);
     if (message.type === 'contentData') {
@@ -195,7 +194,8 @@ async function classifyWithGroq(data, tabId) {
         User Preferences:
         - Productive Content: ${productiveContent || 'Not provided'}
         - Unwanted Content: ${unwantedContent || 'Not provided'}
-        ${userInstructions ? `\nUser-Specific Instructions (Generated): ${JSON.stringify(userInstructions)}` : ''}
+        ${userInstructions ? `
+User-Specific Instructions (Generated): ${JSON.stringify(userInstructions)}` : ''}
 
         Content to classify:
         - Source: ${source}

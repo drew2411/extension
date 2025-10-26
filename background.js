@@ -1,11 +1,28 @@
 const rickrollUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-// 1. Reddit Homepage Redirect
+// 1. Listen for tab updates for initial loads and Reddit homepage
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Redirect Reddit homepage
     if (changeInfo.status === 'complete' && tab.url === "https://www.reddit.com/") {
         console.log("Redirecting Reddit homepage.");
         chrome.tabs.update(tabId, { url: rickrollUrl });
+        return;
+    }
+
+    // Inject youtube.js on initial page load since it's no longer in the manifest
+    if (changeInfo.status === 'complete' && tab.url && tab.url.includes("youtube.com/watch")) {
+        console.log(`YouTube page loaded. Injecting content script into tab ${tabId}`);
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ['youtube.js']
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.error(`Initial script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+            } else {
+                console.log("Successfully injected youtube.js on page load.");
+            }
+        });
     }
 });
 

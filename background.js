@@ -12,17 +12,30 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Listen for SPA navigations
 chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
     console.log("History state updated:", details.url);
-    if (details.url && (details.url.includes("youtube.com/watch") || details.url.includes("reddit.com/r/"))) {
-        try {
-            console.log(`Sending navigation-completed to tab ${details.tabId}`);
-            chrome.tabs.sendMessage(details.tabId, { type: 'navigation-completed', url: details.url });
-        } catch (error) {
-            if (error.message.includes("Receiving end does not exist")) {
-                console.log("Content script not ready yet, will be handled by initial load.");
+
+    if (details.url && details.url.includes("youtube.com/watch")) {
+        console.log(`YouTube navigation detected. Re-injecting content script into tab ${details.tabId}`);
+        // Programmatically re-inject the content script to ensure it runs on SPA navigation.
+        // This is more reliable than messaging for complex sites like YouTube.
+        chrome.scripting.executeScript({
+            target: { tabId: details.tabId },
+            files: ['youtube.js']
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.error(`Script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
             } else {
-                console.error("Error sending navigation message:", error);
+                console.log("Successfully re-injected youtube.js.");
             }
-        }
+        });
+
+    } else if (details.url && details.url.includes("reddit.com/r/")) {
+        // Reddit is working fine with messaging, so we'll keep that system for it.
+        console.log(`Sending navigation-completed to Reddit tab ${details.tabId}`);
+        chrome.tabs.sendMessage(details.tabId, { type: 'navigation-completed', url: details.url }, response => {
+            if (chrome.runtime.lastError) {
+                console.warn(`Could not send 'navigation-completed' to Reddit: ${chrome.runtime.lastError.message}.`);
+            }
+        });
     }
 });
 

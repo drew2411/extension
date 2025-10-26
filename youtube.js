@@ -1,14 +1,16 @@
-console.log("YouTube content script injected/re-injected. v4");
+console.log("YouTube content script injected/re-injected. v5");
 
-const ANALYSIS_DELAY = 6000; // 6 seconds
-const RETRY_DELAY = 5000; // 5 seconds
-const MAX_RETRIES = 3;
+// Check if the main function has already been defined in this context.
+if (typeof window.runYoutubeAnalysis !== 'function') {
+    console.log("Defining analysis functions for the first time.");
 
-// A guard to ensure the script only runs once per injection.
-if (window.hasContentScriptRun) {
-    console.log("Content script has already run in this context. Exiting.");
-} else {
-    window.hasContentScriptRun = true;
+    // Define constants and helper functions only once.
+    const ANALYSIS_DELAY = 6000; // 6 seconds
+    const RETRY_DELAY = 5000; // 5 seconds
+    const MAX_RETRIES = 3;
+
+    // Guard to prevent multiple extractions from being triggered for the same URL
+    let lastProcessedUrl = "";
 
     function sendMessageWithRetry(message, retries = MAX_RETRIES) {
         console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
@@ -17,9 +19,7 @@ if (window.hasContentScriptRun) {
                 const errorMessage = chrome.runtime.lastError.message;
                 if (errorMessage.includes("Receiving end does not exist") && retries > 0) {
                     console.warn(`Connection to background script failed. Retrying in ${RETRY_DELAY / 1000} seconds...`);
-                    setTimeout(() => {
-                        sendMessageWithRetry(message, retries - 1);
-                    }, RETRY_DELAY);
+                    setTimeout(() => { sendMessageWithRetry(message, retries - 1); }, RETRY_DELAY);
                 } else {
                     console.error(`Failed to send message after multiple retries: ${errorMessage}`, message);
                 }
@@ -30,6 +30,11 @@ if (window.hasContentScriptRun) {
     }
 
     const extractData = () => {
+        if (window.location.href === lastProcessedUrl) {
+            console.log("URL has already been processed recently. Skipping extraction.");
+            return;
+        }
+        lastProcessedUrl = window.location.href;
         console.log("Starting YouTube data extraction...");
 
         try {
@@ -46,12 +51,10 @@ if (window.hasContentScriptRun) {
             if (!videoDescription) console.warn("Could not find video description.");
 
             const comments = [];
-            document.querySelectorAll('ytd-comment-thread-renderer').forEach((commentNode, index) => {
+            document.querySelectorAll('ytd-comment-thread-renderer').forEach((commentNode) => {
                 if (comments.length < 5) {
                     const commentText = commentNode.querySelector('#content-text')?.innerText;
-                    if (commentText) {
-                        comments.push(commentText);
-                    }
+                    if (commentText) { comments.push(commentText); }
                 }
             });
             console.log(`Extracted ${comments.length} comments.`);
@@ -78,7 +81,14 @@ if (window.hasContentScriptRun) {
         }
     };
 
-    // Since this script is re-injected on each navigation, we just need to run it once after a delay.
-    console.log(`Script injected. Waiting ${ANALYSIS_DELAY / 1000} seconds to extract data.`);
-    setTimeout(extractData, ANALYSIS_DELAY);
+    // Define the main execution function and attach it to the window object.
+    window.runYoutubeAnalysis = () => {
+        console.log(`Analysis triggered. Waiting ${ANALYSIS_DELAY / 1000} seconds to extract data.`);
+        setTimeout(extractData, ANALYSIS_DELAY);
+    };
 }
+
+// Always call the main function when the script is injected.
+// This ensures that on re-injection, the analysis is triggered again.
+console.log("Invoking analysis trigger.");
+window.runYoutubeAnalysis();

@@ -1,4 +1,7 @@
+console.log("YouTube content script injected.");
+
 const extractData = () => {
+    console.log("Attempting to extract data from YouTube...");
     try {
         const videoTitle = document.querySelector('h1.ytd-watch-metadata').innerText;
         const channelName = document.querySelector('#upload-info #channel-name a').innerText;
@@ -7,7 +10,6 @@ const extractData = () => {
         const videoDescription = descriptionElement ? descriptionElement.innerText : '';
 
         const comments = [];
-        // More robust comment selector for YouTube
         document.querySelectorAll('ytd-comment-thread-renderer').forEach(commentNode => {
             if (comments.length < 5) {
                 const commentText = commentNode.querySelector('#content-text')?.innerText;
@@ -25,6 +27,7 @@ const extractData = () => {
             comments: comments
         };
 
+        console.log("Sending data from youtube.js:", data);
         chrome.runtime.sendMessage({ type: 'contentData', data: data });
 
     } catch (error) {
@@ -33,19 +36,13 @@ const extractData = () => {
     }
 };
 
-// Use MutationObserver to wait for the page to load
-const observer = new MutationObserver((mutations, obs) => {
-    // Look for the video title and comments, which are usually loaded last
-    const videoTitle = document.querySelector('h1.ytd-watch-metadata');
-    const commentsSection = document.querySelector('#comments');
-
-    if (videoTitle && commentsSection) {
-        obs.disconnect(); // Stop observing once the content is found
-        extractData();
+// Listen for messages from the background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'navigation-completed') {
+        // Use a timeout to allow the SPA to render the new page content
+        setTimeout(extractData, 3000); // YouTube can be slower to load
     }
 });
 
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
-});
+// Initial extraction for the first page load
+setTimeout(extractData, 3000);

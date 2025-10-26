@@ -1,6 +1,27 @@
 console.log("YouTube content script injected and running.");
 
 const ANALYSIS_DELAY = 6000; // 6 seconds
+const RETRY_DELAY = 5000; // 5 seconds
+const MAX_RETRIES = 3;
+
+function sendMessageWithRetry(message, retries = MAX_RETRIES) {
+    console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
+    chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+            const errorMessage = chrome.runtime.lastError.message;
+            if (errorMessage.includes("Receiving end does not exist") && retries > 0) {
+                console.warn(`Connection to background script failed. Retrying in ${RETRY_DELAY / 1000} seconds...`);
+                setTimeout(() => {
+                    sendMessageWithRetry(message, retries - 1);
+                }, RETRY_DELAY);
+            } else {
+                console.error(`Failed to send message after multiple retries: ${errorMessage}`, message);
+            }
+        } else {
+            console.log("Message sent successfully to background script.");
+        }
+    });
+}
 
 const extractData = () => {
     console.log("Starting YouTube data extraction...");
@@ -13,7 +34,6 @@ const extractData = () => {
         const channelName = channelElement ? channelElement.innerText : '';
         if (!channelName) console.warn("Could not find channel name.");
 
-        // The description can be tricky. This selector targets the formatted string within the expandable description box.
         const descriptionElement = document.querySelector('yt-formatted-string.content.style-scope.ytd-video-secondary-info-renderer');
         const videoDescription = descriptionElement ? descriptionElement.innerText : '';
         if (!videoDescription) console.warn("Could not find video description.");
@@ -32,7 +52,7 @@ const extractData = () => {
         console.log(`Extracted ${comments.length} comments.`);
 
         if (!channelName && !videoTitle) {
-            console.error("Failed to extract essential data (channel and title). Aborting.");
+            console.error("Failed to extract essential data (channel and title). Aborting message send.");
             return;
         }
 
@@ -44,12 +64,12 @@ const extractData = () => {
             comments: comments
         };
 
-        console.log("Successfully extracted data from youtube.js:", data);
-        chrome.runtime.sendMessage({ type: 'contentData', data: data });
+        console.log("Successfully extracted data. Preparing to send to background script:", data);
+        sendMessageWithRetry({ type: 'contentData', data: data });
 
     } catch (error) {
         console.error('An error occurred during YouTube data extraction:', error);
-        chrome.runtime.sendMessage({ type: 'error', message: 'Could not extract data from YouTube page.' });
+        sendMessageWithRetry({ type: 'error', message: 'Could not extract data from YouTube page.' });
     }
 };
 

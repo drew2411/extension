@@ -46,8 +46,17 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
             const channelName = channelElement ? channelElement.innerText : '';
             if (!channelName) console.warn("Could not find channel name.");
 
-            const descriptionElement = document.querySelector('yt-formatted-string.content.style-scope.ytd-video-secondary-info-renderer');
-            const videoDescription = descriptionElement ? descriptionElement.innerText : '';
+            // ✅ Updated description extraction
+            const showMoreButton = document.querySelector('tp-yt-paper-button#expand');
+            if (showMoreButton) {
+                showMoreButton.click();
+            }
+
+            const descriptionElement = document.querySelector('#description yt-formatted-string') 
+                || document.querySelector('ytd-expander#description yt-formatted-string') 
+                || document.querySelector('yt-formatted-string.content');
+            
+            const videoDescription = descriptionElement ? descriptionElement.innerText.trim() : '';
             if (!videoDescription) console.warn("Could not find video description.");
 
             const comments = [];
@@ -68,7 +77,7 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
                 source: 'youtube',
                 channel: channelName,
                 title: videoTitle,
-                description: videoDescription.trim(),
+                description: videoDescription,
                 comments: comments
             };
 
@@ -80,6 +89,7 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
             sendMessageWithRetry({ type: 'error', message: 'Could not extract data from YouTube page.' });
         }
     };
+
 
     // Define the main execution function and attach it to the window object.
     window.runYoutubeAnalysis = () => {

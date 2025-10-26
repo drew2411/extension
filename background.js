@@ -7,6 +7,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 });
 
+// Listen for SPA navigations
+chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
+    if (details.url && (details.url.includes("youtube.com/watch") || details.url.includes("reddit.com/r/"))) {
+        chrome.tabs.sendMessage(details.tabId, { type: 'navigation-completed', url: details.url });
+    }
+});
+
 // 2. Listen for messages from content scripts or the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'contentData') {

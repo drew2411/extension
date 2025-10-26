@@ -217,18 +217,24 @@ async function classifyWithGroq(data, tabId) {
         - Top 5 Comments: ${comments.join('\n') || 'No comments'}
 
         **Your Task:**
-        Follow these steps and provide your reasoning in the final JSON output.
+        Follow the reasoning steps below. Then, provide your final classification in the specified JSON format.
 
-        1.  **Step 1: Check against Productive Content.** Does the content's title, channel, or description directly relate to any keywords in the 'Productive Content' list? Note the match.
-        2.  **Step 2: Check against Unwanted Content.** Does the content's title, channel, or description directly relate to any keywords in the 'Unwanted Content' list? Note the match.
-        3.  **Step 3: General Classification.** Based on the title, description, and comments, would this content generally be considered entertainment (e.g., comedy, gaming, gossip, drama)?
-        4.  **Step 4: Final Decision.**
-            *   If the content matched a 'Productive Content' keyword in Step 1, it is **NOT** entertainment, regardless of Step 3, unless it also matched an 'Unwanted Content' keyword.
-            *   If the content matched an 'Unwanted Content' keyword in Step 2, it **IS** entertainment.
-            *   Otherwise, your decision should be based on the general classification from Step 3.
+        **Reasoning Steps:**
+        1.  **Productive Match:** Analyze if the content (title, channel, description) matches any keywords from the 'Productive Content' list. State your finding.
+        2.  **Unwanted Match:** Analyze if the content matches any keywords from the 'Unwanted Content' list. State your finding.
+        3.  **General Analysis:** Analyze the general nature of the content (e.g., comedy sketch, lecture, news report, tutorial). 
+        4.  **Conclusion:** Based on the rules below, state the final classification.
+            *   **Rule A (Productive Override):** If a productive match is found, it is NOT entertainment (unless an unwanted match is also found).
+            *   **Rule B (Unwanted Override):** If an unwanted match is found, it IS entertainment.
+            *   **Rule C (Default):** Otherwise, classify based on the general analysis.
 
-        Respond ONLY with a valid JSON object in this format:
-        {"entertainment": true/false, "reason": "Step 1: [Your reasoning]. Step 2: [Your reasoning]. Step 3: [Your reasoning]. Step 4: [Your final decision based on the rules]."}
+        **Output Format:**
+        Respond ONLY with a single valid JSON object with two keys, "reasoning" and "entertainment".
+
+        {
+          "reasoning": "Step 1 (Productive): [Your finding]. Step 2 (Unwanted): [Your finding]. Step 3 (General): [Your analysis]. Step 4 (Conclusion): [Your conclusion statement based on the rules].",
+          "entertainment": true/false
+        }
     `;
     
     console.log("Sending prompt to GROQ for classification:", prompt);
@@ -244,7 +250,7 @@ async function classifyWithGroq(data, tabId) {
                 model: "llama-3.1-8b-instant",
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.1,
-                max_tokens: 350, // Increased to allow for longer reasoning
+                max_tokens: 400, // Increased to allow for longer reasoning
                 top_p: 1,
                 stream: false,
                 response_format: { type: "json_object" },
@@ -272,11 +278,11 @@ async function classifyWithGroq(data, tabId) {
         console.log("GROQ Classification:", classification);
 
         if (classification.entertainment === true) {
-            console.log(`Classified ${blockKey} as entertainment. Reason: ${classification.reason}. Blocking.`);
+            console.log(`Classified ${blockKey} as entertainment. Reason: ${classification.reasoning}. Blocking.`);
             await addToBlocklist(blockKey);
             chrome.tabs.update(tabId, { url: rickrollUrl });
         } else {
-            console.log(`Classified ${blockKey} as not entertainment. Reason: ${classification.reason}.`);
+            console.log(`Classified ${blockKey} as not entertainment. Reason: ${classification.reasoning}.`);
         }
 
     } catch (error) {

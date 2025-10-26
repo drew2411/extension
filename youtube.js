@@ -1,12 +1,10 @@
-console.log("YouTube content script injected and running.");
+console.log("YouTube content script injected and running. v3");
 
 const ANALYSIS_DELAY = 6000; // 6 seconds
-const URL_CHECK_INTERVAL = 2000; // 2 seconds
 const RETRY_DELAY = 5000; // 5 seconds
 const MAX_RETRIES = 3;
 
 let lastProcessedUrl = "";
-let currentUrl = window.location.href;
 
 function sendMessageWithRetry(message, retries = MAX_RETRIES) {
     console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
@@ -28,7 +26,7 @@ function sendMessageWithRetry(message, retries = MAX_RETRIES) {
 }
 
 const extractData = () => {
-    // Prevent re-running on the same page if triggered multiple times
+    // Guard against re-running on the same page
     if (window.location.href === lastProcessedUrl) {
         console.log("URL has already been processed. Skipping extraction.");
         return;
@@ -55,8 +53,6 @@ const extractData = () => {
                 const commentText = commentNode.querySelector('#content-text')?.innerText;
                 if (commentText) {
                     comments.push(commentText);
-                } else {
-                    console.warn(`Could not extract text from comment node ${index}.`);
                 }
             }
         });
@@ -84,30 +80,36 @@ const extractData = () => {
     }
 };
 
-// This listener remains as a backup trigger from the background script.
+// --- Primary Trigger: MutationObserver on <title> element ---
+const observeTitle = () => {
+    const titleElement = document.querySelector('title');
+    if (!titleElement) {
+        console.warn("Could not find <title> element to observe. Retrying in 2s.");
+        setTimeout(observeTitle, 2000);
+        return;
+    }
+
+    const titleObserver = new MutationObserver(() => {
+        console.log("Document title changed, indicating new video page. Triggering data extraction.");
+        // Use a delay to let the rest of the page content (like comments) load.
+        setTimeout(extractData, ANALYSIS_DELAY);
+    });
+
+    titleObserver.observe(titleElement, { childList: true });
+    console.log("MutationObserver is now watching the document title for changes.");
+};
+
+// --- Fallback Trigger: from background script ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'navigation-completed') {
-        console.log(`'navigation-completed' message received. Triggering data extraction.`);
+        console.log(`'navigation-completed' message received. Triggering data extraction as a fallback.`);
         setTimeout(extractData, ANALYSIS_DELAY);
     }
 });
 
-// --- Primary Trigger for SPA Navigation ---
-function handleUrlChange() {
-    console.log("URL change detected. Waiting for analysis delay before extraction.");
-    setTimeout(extractData, ANALYSIS_DELAY);
-}
-
-// Check for URL changes periodically. This is more reliable for SPAs like YouTube.
-setInterval(() => {
-    if (window.location.href !== currentUrl) {
-        console.log(`URL changed from '${currentUrl}' to '${window.location.href}'.`);
-        currentUrl = window.location.href;
-        handleUrlChange();
-    }
-}, URL_CHECK_INTERVAL);
-
-
 // --- Initial Page Load Trigger ---
 console.log(`Initial page load. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
 setTimeout(extractData, ANALYSIS_DELAY);
+
+// Start the title observer
+observeTitle();

@@ -1,21 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "Content Identifier",
+  "name": "Content Classifier",
   "version": "1.0",
-  "description": "Identifies if the current page is YouTube, Reddit, or other.",
+  "description": "Classifies YouTube and Reddit content as entertainment and blocks it if necessary.",
   "permissions": [
-    "activeTab"
+    "storage",
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
-    "http://127.0.0.1:8000/"
+    "https://*.youtube.com/*",
+    "https://*.reddit.com/*"
   ],
-  "action": {
-    "default_popup": "frontend/popup.html",
-    "default_icon": "icon.png"
+  "background": {
+    "service_worker": "background.js"
   },
-  "icons": {
-    "16": "icon.png",
-    "48": "icon.png",
-    "128": "icon.png"
-  }
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Content Classifier"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.reddit.com/", "https://www.reddit.com/r/*"],
+      "js": ["reddit.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.youtube.com/watch*"],
+      "js": ["youtube.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

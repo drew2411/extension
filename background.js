@@ -18,7 +18,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             files: ['youtube.js']
         }, () => {
             if (chrome.runtime.lastError) {
-                console.error(`Initial script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+                // This error is common if the script is already being injected by another listener.
+                if (!chrome.runtime.lastError.message.includes("Cannot create a new script context for the page")) {
+                    console.error(`Initial script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+                }
             } else {
                 console.log("Successfully injected youtube.js on page load.");
             }
@@ -38,7 +41,10 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
             files: ['youtube.js']
         }, () => {
             if (chrome.runtime.lastError) {
-                console.error(`Script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+                // This error is common if the script is already being injected by another listener.
+                if (!chrome.runtime.lastError.message.includes("Cannot create a new script context for the page")) {
+                    console.error(`Script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+                }
             } else {
                 console.log("Successfully re-injected youtube.js.");
             }
@@ -191,21 +197,38 @@ async function classifyWithGroq(data, tabId) {
     const blockKey = source === 'youtube' ? channel : subreddit;
 
     const prompt = `
-        User Preferences:
-        - Productive Content: ${productiveContent || 'Not provided'}
-        - Unwanted Content: ${unwantedContent || 'Not provided'}
-        ${userInstructions ? `
-User-Specific Instructions (Generated): ${JSON.stringify(userInstructions)}` : ''}
+        You are a strict content classification assistant. Your goal is to determine if a piece of content is 'entertainment' based on a user's specific preferences.
 
-        Content to classify:
+        **User Preferences:**
+        - **Productive Content (High Priority):** The user considers these topics, creators, or keywords to be important, educational, or relevant to their work/research. Content matching these should NOT be classified as entertainment unless it also matches a specific 'Unwanted' rule.
+          - ${productiveContent || 'Not provided'}
+
+        - **Unwanted Content (Explicit Block):** The user explicitly wants to block content matching these topics or keywords.
+          - ${unwantedContent || 'Not provided'}
+
+        - **Generated Instructions (General Guidance):**
+          ${userInstructions ? JSON.stringify(userInstructions) : 'Not available'}
+
+        **Content to Classify:**
         - Source: ${source}
         - ${source === 'youtube' ? 'Channel' : 'Subreddit'}: ${blockKey}
         - Title: ${title}
         - Content/Description: ${content || description || 'Not available'}
         - Top 5 Comments: ${comments.join('\n') || 'No comments'}
 
-        Based on the user's preferences and the content details, is this content primarily for entertainment?
-        Respond ONLY with a valid JSON object like this: {"entertainment": true/false, "reason": "A brief explanation for the classification."}
+        **Your Task:**
+        Follow these steps and provide your reasoning in the final JSON output.
+
+        1.  **Step 1: Check against Productive Content.** Does the content's title, channel, or description directly relate to any keywords in the 'Productive Content' list? Note the match.
+        2.  **Step 2: Check against Unwanted Content.** Does the content's title, channel, or description directly relate to any keywords in the 'Unwanted Content' list? Note the match.
+        3.  **Step 3: General Classification.** Based on the title, description, and comments, would this content generally be considered entertainment (e.g., comedy, gaming, gossip, drama)?
+        4.  **Step 4: Final Decision.**
+            *   If the content matched a 'Productive Content' keyword in Step 1, it is **NOT** entertainment, regardless of Step 3, unless it also matched an 'Unwanted Content' keyword.
+            *   If the content matched an 'Unwanted Content' keyword in Step 2, it **IS** entertainment.
+            *   Otherwise, your decision should be based on the general classification from Step 3.
+
+        Respond ONLY with a valid JSON object in this format:
+        {"entertainment": true/false, "reason": "Step 1: [Your reasoning]. Step 2: [Your reasoning]. Step 3: [Your reasoning]. Step 4: [Your final decision based on the rules]."}
     `;
     
     console.log("Sending prompt to GROQ for classification:", prompt);
@@ -220,8 +243,8 @@ User-Specific Instructions (Generated): ${JSON.stringify(userInstructions)}` : '
             body: JSON.stringify({
                 model: "llama-3.1-8b-instant",
                 messages: [{ role: "user", content: prompt }],
-                temperature: 0.2,
-                max_tokens: 200,
+                temperature: 0.1,
+                max_tokens: 350, // Increased to allow for longer reasoning
                 top_p: 1,
                 stream: false,
                 response_format: { type: "json_object" },

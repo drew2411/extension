@@ -1,32 +1,54 @@
 const rickrollUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 // 1. Reddit Homepage Redirect
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url === "https://www.reddit.com/") {
+        console.log("Redirecting Reddit homepage.");
         chrome.tabs.update(tabId, { url: rickrollUrl });
     }
 });
 
 // Listen for SPA navigations
 chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
+    console.log("History state updated:", details.url);
     if (details.url && (details.url.includes("youtube.com/watch") || details.url.includes("reddit.com/r/"))) {
-        chrome.tabs.sendMessage(details.tabId, { type: 'navigation-completed', url: details.url });
+        try {
+            console.log(`Sending navigation-completed to tab ${details.tabId}`);
+            chrome.tabs.sendMessage(details.tabId, { type: 'navigation-completed', url: details.url });
+        } catch (error) {
+            if (error.message.includes("Receiving end does not exist")) {
+                console.log("Content script not ready yet, will be handled by initial load.");
+            } else {
+                console.error("Error sending navigation message:", error);
+            }
+        }
     }
 });
 
 // 2. Listen for messages from content scripts or the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log("Received message:", message.type);
     if (message.type === 'contentData') {
-        console.log("Received data:", message.data);
+        console.log("Received content data:", message.data);
         handleContentData(message.data, sender.tab.id);
+        sendResponse({success: true}); // Acknowledge receipt
     } else if (message.type === 'removeFromBlocklist') {
         removeFromBlocklist(message.key).then(() => {
             sendResponse({success: true});
         });
     } else if (message.type === 'generateInstructions') {
+        console.log("Received request to generate instructions with bio:", message.userBio);
         generateUserInstructions(message.userBio, message.groqApiKey).then(instructions => {
-            chrome.storage.local.set({ userInstructions: instructions });
-            sendResponse({success: true});
+            if (instructions) {
+                chrome.storage.local.set({ userInstructions: instructions }, () => {
+                    console.log("User instructions saved:", instructions);
+                    sendResponse({success: true});
+                });
+            } else {
+                console.error("Instruction generation failed.");
+                sendResponse({success: false});
+            }
         });
     }
     return true; // Indicates that the response will be sent asynchronously
@@ -36,70 +58,62 @@ async function handleContentData(data, tabId) {
     const { source, channel, subreddit } = data;
     const blockKey = source === 'youtube' ? channel : subreddit;
 
-    // 3. Check local cache first
+    // Check temporary whitelist first
+    const tempWhitelist = await getTempWhitelist();
+    const whitelistEntry = tempWhitelist[blockKey];
+    if (whitelistEntry && (Date.now() - whitelistEntry.timestamp < TEN_MINUTES_MS)) {
+        console.log(`${blockKey} is in the temporary whitelist. Skipping analysis.`);
+        return;
+    }
+
+    // Check permanent blocklist (cache)
     const blocklist = await getBlocklist();
     if (blocklist.includes(blockKey)) {
-        console.log(`Redirecting ${blockKey} from cache.`);
+        console.log(`Redirecting ${blockKey} from cached blocklist.`);
         chrome.tabs.update(tabId, { url: rickrollUrl });
         return;
     }
 
-    // =====================================================================================
-    // PRODUCTION SECURITY COMMENT: DATABASE ACCESS
-    // The following logic should be handled by a secure serverless API.
-    // The extension should not know about the database.
-    // 
-    // HOW TO REFACTOR FOR PRODUCTION:
-    // 1. Create a serverless function (e.g., on Vercel, Netlify, AWS Lambda).
-    // 2. This function will have an endpoint like `POST /api/getClassification`.
-    // 3. The function will take `{ blockKey }` as a parameter.
-    // 4. It will connect to your Neon database securely on the server-side.
-    // 5. It will query the database to see if the `blockKey` exists and what its classification is.
-    // 6. It will return the classification to the extension (e.g., `{ classification: 'entertainment' }`).
-    // 7. Replace the placeholder below with a `fetch` call to your new API endpoint.
-    // =====================================================================================
-    // 4. Check Neon DB (Placeholder for personal use)
-    // const dbClassification = await checkNeonDb(blockKey); 
-    // if (dbClassification === 'entertainment') {
-    //     await addToBlocklist(blockKey);
-    //     chrome.tabs.update(tabId, { url: rickrollUrl });
-    //     return;
-    // }
-
-    // 5. If not found in cache or DB, classify with GROQ
+    // If not found in cache or temp whitelist, classify with GROQ
+    console.log(`No cache hit for ${blockKey}. Classifying with GROQ.`);
     classifyWithGroq(data, tabId);
 }
 
 async function generateUserInstructions(userBio, groqApiKey) {
-    if (!userBio) return null;
+    if (!userBio || (!userBio.productive && !userBio.unwanted)) {
+        console.log("Bio is empty, skipping instruction generation.");
+        return null;
+    }
 
     const generateUserInstructionsPrompt = `
         You are an intelligent context profiler that creates personalized classification rules.
-        You will be given a user's bio. Based on it, you must infer their main areas of expertise, interest, and professional or creative focus.
-        Then, write clear, structured guidelines describing how to tell whether a piece of online content is "entertainment" or "relevant/educational" for that user.
+        You will be given a user's preferences in two parts:
+        1.  **Productive Content:** Topics the user finds educational or relevant.
+        2.  **Unwanted Content:** Topics the user explicitly wants to avoid.
 
-        User Bio:
-        ${userBio}
+        User Preferences:
+        - Productive Content: ${userBio.productive || 'Not specified'}
+        - Unwanted Content: ${userBio.unwanted || 'Not specified'}
 
         Your Task:
-        Analyze the bio and extract key interests or domains of knowledge (e.g., AI, web development, finance, gaming, art, etc.).
-        Create two concise lists:
-        - Relevant_Topics: Topics, styles, or keywords that the user would likely consider educational, useful, or professionally relevant.
-        - Entertainment_Indicators: Types of content, tone, or formats that the user would likely consider primarily entertainment.
+        Analyze the preferences and create two concise lists for a content classification model:
+        - Relevant_Topics: Generalize from the user's productive content. These are topics, styles, or keywords that the user would likely consider educational, useful, or professionally relevant.
+        - Entertainment_Indicators: Generalize from the user's unwanted content and common entertainment patterns. These are types of content, tone, or formats that the user would likely consider primarily entertainment.
 
-        Include short examples (not long explanations) for each list.
+        Include short examples for each list.
 
         Output only a single valid JSON object in this format:
-        { "relevant_topics": [ "short bullet or keyword #1", "short bullet or keyword #2", "..." ], "entertainment_indicators": [ "short bullet or keyword #1", "short bullet or keyword #2", "..." ] }
+        { "relevant_topics": [ "short bullet or keyword #1", "..." ], "entertainment_indicators": [ "short bullet or keyword #1", "..." ] }
 
         Rules:
         - Do not include any text outside the JSON object.
-        - Keep each bullet short and descriptive (max 6–8 words).
-        - Avoid redundancy or vague terms like “technology” or “fun.”
-        - Infer and generalize sensibly from the bio — if the user lists multiple interests, include all major domains.
-        - Ensure the JSON is syntactically valid (no trailing commas, quotes properly closed).
+        - Keep each bullet short and descriptive (max 6-8 words).
+        - Infer and generalize sensibly from the preferences.
+        - Ensure the JSON is syntactically valid.
         - Output only the JSON.
     `;
+
+    console.log("Generating user instructions with prompt:", generateUserInstructionsPrompt);
 
     try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -112,7 +126,7 @@ async function generateUserInstructions(userBio, groqApiKey) {
                 model: "llama-3.1-8b-instant",
                 messages: [{ role: "user", content: generateUserInstructionsPrompt }],
                 temperature: 0.2,
-                max_tokens: 200,
+                max_tokens: 250,
                 top_p: 1,
                 stream: false,
                 response_format: { type: "json_object" },
@@ -127,6 +141,7 @@ async function generateUserInstructions(userBio, groqApiKey) {
         }
 
         const rawContent = result.choices[0].message.content;
+        console.log("Received raw instructions from GROQ:", rawContent);
         return JSON.parse(rawContent);
 
     } catch (error) {
@@ -136,7 +151,7 @@ async function generateUserInstructions(userBio, groqApiKey) {
 }
 
 async function classifyWithGroq(data, tabId) {
-    const { groqApiKey, userBio, userInstructions } = await chrome.storage.local.get(['groqApiKey', 'userBio', 'userInstructions']);
+    const { groqApiKey, productiveContent, unwantedContent, userInstructions } = await chrome.storage.local.get(['groqApiKey', 'productiveContent', 'unwantedContent', 'userInstructions']);
 
     if (!groqApiKey) {
         console.log("GROQ API key not set. Cannot classify.");
@@ -147,35 +162,23 @@ async function classifyWithGroq(data, tabId) {
     const blockKey = source === 'youtube' ? channel : subreddit;
 
     const prompt = `
-        User Bio: ${userBio || 'Not provided'}
-        ${userInstructions ? `User-Specific Instructions: ${JSON.stringify(userInstructions)}` : ''}
+        User Preferences:
+        - Productive Content: ${productiveContent || 'Not provided'}
+        - Unwanted Content: ${unwantedContent || 'Not provided'}
+        ${userInstructions ? `\nUser-Specific Instructions (Generated): ${JSON.stringify(userInstructions)}` : ''}
 
         Content to classify:
         - Source: ${source}
         - ${source === 'youtube' ? 'Channel' : 'Subreddit'}: ${blockKey}
         - Title: ${title}
-        - Content/Description: ${content || description}
-        - Top 5 Comments: ${comments.join('\n')}
+        - Content/Description: ${content || description || 'Not available'}
+        - Top 5 Comments: ${comments.join('\n') || 'No comments'}
 
-        Based on the user's bio and the content details, is this content primarily for entertainment? 
-        Respond ONLY with a valid JSON object like this: {"entertainment": true/false}
+        Based on the user's preferences and the content details, is this content primarily for entertainment?
+        Respond ONLY with a valid JSON object like this: {"entertainment": true/false, "reason": "A brief explanation for the classification."}
     `;
-
-    // =====================================================================================
-    // PRODUCTION SECURITY COMMENT: DIRECT API CALLS
-    // This direct call to the GROQ API is acceptable for personal use, where the user provides their own key.
-    // For a public extension, you must hide your API key in a backend.
-    //
-    // HOW TO REFACTOR FOR PRODUCTION:
-    // 1. Move this entire API call logic into a new serverless function (e.g., `POST /api/classify`).
-    // 2. The extension would send the `data` object to your API.
-    // 3. Your serverless function would then make the call to GROQ using your secret API key stored securely as an environment variable on the server.
-    // 4. The serverless function would also handle saving the result to the Neon database.
-    // 5. The function returns the final classification to the extension.
-    // 6. This prevents your GROQ API key from being exposed in the extension's code.
-    // =====================================================================================
     
-    console.log("Sending prompt to GROQ:", prompt);
+    console.log("Sending prompt to GROQ for classification:", prompt);
 
     try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -188,7 +191,7 @@ async function classifyWithGroq(data, tabId) {
                 model: "llama-3.1-8b-instant",
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.2,
-                max_tokens: 50,
+                max_tokens: 200,
                 top_p: 1,
                 stream: false,
                 response_format: { type: "json_object" },
@@ -200,41 +203,27 @@ async function classifyWithGroq(data, tabId) {
         console.log("Received raw response from GROQ:", JSON.stringify(result, null, 2));
 
         if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
-            console.error("Invalid response from GROQ API. Full error object:", JSON.stringify(result, null, 2));
-            
-            if (result.error && result.error.failed_generation) {
-                console.error("GROQ 'failed_generation' details:", result.error.failed_generation);
-            }
+            console.error("Invalid response from GROQ API:", result);
             return; 
         }
 
         const rawContent = result.choices[0].message.content;
-        console.log("Model's raw message content:", rawContent);
-
         let classification;
         try {
-            const jsonMatch = rawContent.match(/\{.*\}/s);
-            if (!jsonMatch) {
-                throw new Error("No JSON object found in the model's response.");
-            }
-            classification = JSON.parse(jsonMatch[0]);
+            classification = JSON.parse(rawContent);
         } catch (e) {
-            console.error("Failed to parse JSON from model response. Raw content was:", rawContent, "Error:", e);
+            console.error("Failed to parse JSON from model response:", rawContent, e);
             return;
         }
 
         console.log("GROQ Classification:", classification);
 
         if (classification.entertainment === true) {
-            console.log(`Classified ${blockKey} as entertainment. Blocking.`);
+            console.log(`Classified ${blockKey} as entertainment. Reason: ${classification.reason}. Blocking.`);
             await addToBlocklist(blockKey);
-            // REFACTOR COMMENT: This database call should be part of your serverless function.
-            // await saveToNeonDb(blockKey, 'entertainment');
             chrome.tabs.update(tabId, { url: rickrollUrl });
         } else {
-            console.log(`Classified ${blockKey} as not entertainment.`);
-            // REFACTOR COMMENT: This database call should also be part of your serverless function.
-            // await saveToNeonDb(blockKey, 'productive');
+            console.log(`Classified ${blockKey} as not entertainment. Reason: ${classification.reason}.`);
         }
 
     } catch (error) {
@@ -242,7 +231,7 @@ async function classifyWithGroq(data, tabId) {
     }
 }
 
-// --- Blocklist Cache Helpers (Local Storage) ---
+// --- Blocklist & Whitelist Helpers ---
 async function getBlocklist() {
     const result = await chrome.storage.local.get({blocklist: []});
     return result.blocklist;
@@ -261,5 +250,16 @@ async function removeFromBlocklist(key) {
     let blocklist = await getBlocklist();
     blocklist = blocklist.filter(item => item !== key);
     await chrome.storage.local.set({ blocklist: blocklist });
-    console.log("Updated blocklist:", blocklist);
+    console.log(`Removed ${key} from blocklist.`);
+
+    // Add to temporary whitelist
+    const tempWhitelist = await getTempWhitelist();
+    tempWhitelist[key] = { timestamp: Date.now() };
+    await chrome.storage.local.set({ tempWhitelist: tempWhitelist });
+    console.log(`Added ${key} to temporary whitelist for 10 minutes.`);
+}
+
+async function getTempWhitelist() {
+    const result = await chrome.storage.local.get({tempWhitelist: {}});
+    return result.tempWhitelist;
 }

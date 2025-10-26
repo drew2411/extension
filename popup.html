@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Content Classifier</title>
+    <style>
+        body { font-family: sans-serif; width: 350px; padding: 10px; }
+        .nav { display: flex; border-bottom: 1px solid #ccc; }
+        .nav-tab { padding: 10px; cursor: pointer; }
+        .nav-tab.active { border-bottom: 2px solid blue; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; padding-top: 10px; }
+        label { display: block; margin-top: 10px; }
+        input, textarea { width: 95%; padding: 5px; margin-top: 5px; }
+        button { margin-top: 15px; padding: 10px 15px; cursor: pointer; }
+        #classificationsList { list-style-type: none; padding: 0; }
+        #classificationsList li { display: flex; justify-content: space-between; align-items: center; padding: 5px; border-bottom: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <div class="nav-tab active" data-tab="classifier">Classifier</div>
+        <div class="nav-tab" data-tab="settings">Settings</div>
+    </div>
+
+    <div id="classifier" class="tab-content active">
+        <h3>Classification</h3>
+        <div id="currentPageClassification">Loading...</div>
+        <hr>
+        <h4>Blocked List</h4>
+        <ul id="classificationsList"></ul>
+    </div>
+
+    <div id="settings" class="tab-content">
+        <h3>Settings</h3>
+        <label for="groqApiKey">GROQ API Key</label>
+        <input type="password" id="groqApiKey" placeholder="Enter your GROQ API Key">
+
+        <label for="youtubeApiKey">YouTube API Key (Optional)</label>
+        <input type="password" id="youtubeApiKey" placeholder="Enter your YouTube API Key">
+        <label for="userBio">Your Bio</label>
+        <textarea id="userBio" rows="4" placeholder="Tell us about yourself to improve classification..."></textarea>
+
+        <button id="saveSettings">Save Settings</button>
+        <div id="status"></div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

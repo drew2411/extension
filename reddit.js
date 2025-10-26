@@ -1,63 +1,80 @@
-console.log("Reddit content script injected.");
+console.log("Reddit content script injected and running.");
+
+const ANALYSIS_DELAY = 2000;
 
 const extractData = () => {
-    console.log("Attempting to extract data from Reddit...");
+    console.log(`Attempting to extract data from Reddit URL: ${window.location.href}`);
     const url = window.location.href;
     let data = { source: 'reddit', comments: [] };
 
-    if (url.includes('/r/') && url.includes('/comments/')) {
-        // Post Page
-        data.title = document.querySelector('h1')?.innerText;
-        data.subreddit = url.split('/r/')[1].split('/')[0];
-        
-        const postBody = document.querySelector('div[data-test-id="post-content"]');
-        if (postBody) {
-            data.content = '';
-            postBody.querySelectorAll('p').forEach(p => data.content += p.innerText + '\n');
-            data.content = data.content.trim();
-        }
-
-        document.querySelectorAll('div[id^="t1_"]').forEach(commentNode => {
-            if (data.comments.length < 5) {
-                const commentText = commentNode.querySelector('div[data-testid="comment"] p')?.innerText;
-                if (commentText) {
-                    data.comments.push(commentText);
-                }
+    try {
+        if (url.includes('/r/') && url.includes('/comments/')) {
+            // Post Page
+            console.log("Extracting from a Reddit post page.");
+            data.title = document.querySelector('h1')?.innerText;
+            data.subreddit = url.split('/r/')[1].split('/')[0];
+            
+            // This selector targets the main post body.
+            const postBody = document.querySelector('div[data-test-id="post-content"]');
+            if (postBody) {
+                data.content = '';
+                // Extract text from all paragraphs within the post body.
+                postBody.querySelectorAll('p').forEach(p => data.content += p.innerText + '\n');
+                data.content = data.content.trim();
+                console.log(`Extracted post content: ${data.content.substring(0, 100)}...`);
+            } else {
+                console.warn("Could not find post content body.");
             }
-        });
 
-    } else if (url.includes('/r/')) {
-        // Subreddit Homepage
-        data.subreddit = url.split('/r/')[1].split('/')[0];
-        data.title = `Subreddit: r/${data.subreddit}`;
+            // This selector is more specific for the comment text.
+            document.querySelectorAll('div[data-testid="comment"] p').forEach(commentElement => {
+                if (data.comments.length < 5) {
+                    data.comments.push(commentElement.innerText);
+                }
+            });
+            console.log(`Extracted ${data.comments.length} comments.`);
 
-        const sidebar = document.querySelector('div[data-testid="frontpage-sidebar"]');
-        if (sidebar) {
-            data.description = sidebar.querySelector('p')?.innerText;
+        } else if (url.includes('/r/')) {
+            // Subreddit Homepage
+            console.log("Extracting from a subreddit homepage.");
+            data.subreddit = url.split('/r/')[1].split('/')[0];
+            data.title = `Subreddit: r/${data.subreddit}`;
+
+            // This selector targets the sidebar description.
+            const sidebar = document.querySelector('div[data-testid="frontpage-sidebar"]');
+            if (sidebar) {
+                const descriptionElement = sidebar.querySelector('p');
+                data.description = descriptionElement ? descriptionElement.innerText : '';
+                console.log(`Extracted subreddit description: ${data.description}`);
+            }
+
+            let postTitles = [];
+            document.querySelectorAll('h3[id^="post-title-"]').forEach(titleElement => {
+                postTitles.push(titleElement.innerText);
+            });
+            data.content = postTitles.join('\n');
+            console.log(`Extracted ${postTitles.length} post titles from the homepage.`);
         }
 
-        let postTitles = [];
-        document.querySelectorAll('h3[id^="post-title-"]').forEach(titleElement => {
-            postTitles.push(titleElement.innerText);
-        });
-        data.content = postTitles.join('\n');
-    }
-
-    if (data.subreddit) {
-        console.log("Sending data from reddit.js:", data);
-        chrome.runtime.sendMessage({ type: 'contentData', data: data });
-    } else {
-        console.log("Could not extract subreddit from URL.");
+        if (data.subreddit) {
+            console.log("Successfully extracted data from reddit.js:", data);
+            chrome.runtime.sendMessage({ type: 'contentData', data: data });
+        } else {
+            console.log("Could not extract subreddit from URL. No data sent.");
+        }
+    } catch (error) {
+        console.error("An error occurred during Reddit data extraction:", error);
     }
 };
 
-// Listen for messages from the background script
+// Listen for messages from the background script for SPA navigations
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'navigation-completed') {
-        // Use a timeout to allow the SPA to render the new page content
-        setTimeout(extractData, 2000);
+        console.log(`'navigation-completed' message received. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
+        setTimeout(extractData, ANALYSIS_DELAY);
     }
 });
 
 // Initial extraction for the first page load
-setTimeout(extractData, 2000);
+console.log(`Initial page load. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
+setTimeout(extractData, ANALYSIS_DELAY);

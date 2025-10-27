@@ -46,27 +46,34 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
             const channelName = channelElement ? channelElement.innerText : '';
             if (!channelName) console.warn("Could not find channel name.");
 
-            // ✅ Updated description extraction
-            const showMoreButton = document.querySelector('tp-yt-paper-button#expand');
-            if (showMoreButton) {
-                showMoreButton.click();
-            }
-
-            const descriptionElement = document.querySelector('#description yt-formatted-string') 
-                || document.querySelector('ytd-expander#description yt-formatted-string') 
-                || document.querySelector('yt-formatted-string.content');
-            
-            const videoDescription = descriptionElement ? descriptionElement.innerText.trim() : '';
-            if (!videoDescription) console.warn("Could not find video description.");
-
-            const comments = [];
-            document.querySelectorAll('ytd-comment-thread-renderer').forEach((commentNode) => {
-                if (comments.length < 5) {
-                    const commentText = commentNode.querySelector('#content-text')?.innerText;
-                    if (commentText) { comments.push(commentText); }
+            // Try to extract full YouTube video description
+            let videoDescription = '';
+            try {
+                // Expand the description if "Show more" exists
+                const showMoreButton = document.querySelector('tp-yt-paper-button#expand, tp-yt-paper-button#description-inline-expand');
+                if (showMoreButton) {
+                    showMoreButton.click();
+                    console.log("Clicked 'Show more' to expand full description.");
+                } else {
+                    console.warn("'Show more' button not found. Description might already be expanded.");
                 }
-            });
-            console.log(`Extracted ${comments.length} comments.`);
+
+                // Wait briefly for YouTube to render the expanded description (if needed)
+                const descriptionContainer = document.querySelector('ytd-text-inline-expander yt-formatted-string') ||
+                                             document.querySelector('#description ytd-text-inline-expander yt-formatted-string') ||
+                                             document.querySelector('#description yt-formatted-string');
+
+                if (descriptionContainer) {
+                    videoDescription = descriptionContainer.innerText.trim();
+                    console.log("✅ Extracted full video description:", videoDescription.slice(0, 200) + (videoDescription.length > 200 ? '...' : ''));
+                } else {
+                    console.warn("⚠️ Could not find video description element in the DOM.");
+                }
+            } catch (error) {
+                console.error("❌ Error while extracting description:", error);
+            }
+            console.log("Final extracted description length:", videoDescription.length);
+
 
             if (!channelName && !videoTitle) {
                 console.error("Failed to extract essential data (channel and title). Aborting message send.");
@@ -77,8 +84,7 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
                 source: 'youtube',
                 channel: channelName,
                 title: videoTitle,
-                description: videoDescription,
-                comments: comments
+                description: videoDescription
             };
 
             console.log("Successfully extracted data. Preparing to send to background script:", data);

@@ -193,14 +193,14 @@ async function classifyWithGroq(data, tabId) {
         return;
     }
 
-    const { source, channel, subreddit, title, content, description, comments } = data;
+    const { source, channel, subreddit, title, content, description } = data;
     const blockKey = source === 'youtube' ? channel : subreddit;
 
     const prompt = `
         You are a strict content classification assistant. Your goal is to determine if a piece of content is 'entertainment' based on a user's specific preferences.
 
         **User Preferences:**
-        - **Productive Content (High Priority):** The user considers these topics, creators, or keywords to be important, educational, or relevant to their work/research. Content matching these should NOT be classified as entertainment unless it also matches a specific 'Unwanted' rule.
+        - **Productive Content (High Priority):** The user considers these topics, creators, or keywords to be important, educational, or relevant to their work/research. Content matching these is CRITICALLY IMPORTANT and should ALWAYS be classified as NOT entertainment, unless it ALSO explicitly matches a keyword in the 'Unwanted Content' list. This rule takes precedence over all other analysis.
           - ${productiveContent || 'Not provided'}
 
         - **Unwanted Content (Explicit Block):** The user explicitly wants to block content matching these topics or keywords.
@@ -214,7 +214,6 @@ async function classifyWithGroq(data, tabId) {
         - ${source === 'youtube' ? 'Channel' : 'Subreddit'}: ${blockKey}
         - Title: ${title}
         - Content/Description: ${content || description || 'Not available'}
-        - Top 5 Comments: ${comments.join('\n') || 'No comments'}
 
         **Your Task:**
         Follow the reasoning steps below. Then, provide your final classification in the specified JSON format.

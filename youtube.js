@@ -5,9 +5,9 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
     console.log("Defining analysis functions for the first time.");
 
     // Define constants and helper functions only once.
-    const ANALYSIS_DELAY = 6000; // 6 seconds
-    const RETRY_DELAY = 5000; // 5 seconds
-    const MAX_RETRIES = 3;
+    var ANALYSIS_DELAY = 6000; // 6 seconds
+    var RETRY_DELAY = 5000; // 5 seconds
+    var MAX_RETRIES = 3;
 
     // Guard to prevent multiple extractions from being triggered for the same URL
     let lastProcessedUrl = "";

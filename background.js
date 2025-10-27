@@ -85,19 +85,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({success: false});
             }
         });
+    } else if (message.type === 'getClassification') {
+        const tabId = message.tabId.toString();
+        chrome.storage.session.get(tabId, (result) => {
+            sendResponse(result[tabId]);
+        });
     }
     return true; // Indicates that the response will be sent asynchronously
 });
 
+// 4. Clean up session storage when a tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+    chrome.storage.session.remove(tabId.toString());
+    console.log(`Cleaned session storage for closed tab ${tabId}`);
+});
+
+
 async function handleContentData(data, tabId) {
     const { source, channel, subreddit } = data;
     const blockKey = source === 'youtube' ? channel : subreddit;
+
+    // Set initial state for popup
+    chrome.storage.session.set({ [tabId]: { status: 'classifying', key: blockKey, timestamp: Date.now() } });
 
     // Check temporary whitelist first
     const tempWhitelist = await getTempWhitelist();
     const whitelistEntry = tempWhitelist[blockKey];
     if (whitelistEntry && (Date.now() - whitelistEntry.timestamp < TEN_MINUTES_MS)) {
         console.log(`${blockKey} is in the temporary whitelist. Skipping analysis.`);
+        chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: 'This content was recently manually unblocked.', key: blockKey, timestamp: Date.now() } });
         return;
     }
 
@@ -105,6 +121,7 @@ async function handleContentData(data, tabId) {
     const blocklist = await getBlocklist();
     if (blocklist.includes(blockKey)) {
         console.log(`Redirecting ${blockKey} from cached blocklist.`);
+        chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'This content is on your blocklist.', key: blockKey, timestamp: Date.now() } });
         chrome.tabs.update(tabId, { url: rickrollUrl });
         return;
     }
@@ -275,6 +292,14 @@ async function classifyWithGroq(data, tabId) {
         }
 
         console.log("GROQ Classification:", classification);
+
+        const resultForPopup = {
+            entertainment: classification.entertainment,
+            reasoning: classification.reasoning,
+            key: blockKey,
+            timestamp: Date.now()
+        };
+        chrome.storage.session.set({ [tabId]: resultForPopup });
 
         if (classification.entertainment === true) {
             console.log(`Classified ${blockKey} as entertainment. Reason: ${classification.reasoning}. Blocking.`);

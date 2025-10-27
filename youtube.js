@@ -88,7 +88,7 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
             console.error("❌ Error while extracting description:", error);
         }
 
-        return videoDescription;
+        return videoDescription.slice(0,100);
     };
 
     const extractData = async () => {

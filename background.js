@@ -1,31 +1,101 @@
 const rickrollUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-// 1. Listen for tab updates for initial loads and Reddit homepage
+function urlMatchesStrictRule(url, rule) {
+    if (!url || !rule) return false;
+    const trimmed = rule.trim();
+    if (!trimmed) return false;
+    try {
+        const current = new URL(url);
+        if (/^https?:\/\//i.test(trimmed)) {
+            return url.startsWith(trimmed);
+        }
+        const lowerRule = trimmed.toLowerCase();
+        const firstSlash = lowerRule.indexOf('/');
+        if (firstSlash === -1) {
+            const host = current.hostname.toLowerCase();
+            return host === lowerRule || host.endsWith('.' + lowerRule);
+        }
+        const hostPart = lowerRule.slice(0, firstSlash);
+        const pathPart = lowerRule.slice(firstSlash);
+        const host = current.hostname.toLowerCase();
+        const path = current.pathname;
+        const hostMatches = host === hostPart || host.endsWith('.' + hostPart);
+        const pathMatches = path.startsWith(pathPart);
+        return hostMatches && pathMatches;
+    } catch (e) {
+        return url.startsWith(trimmed);
+    }
+}
+
+// 1. Listen for tab updates for initial loads and homepage/website blocking
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    // Redirect Reddit homepage
-    if (changeInfo.status === 'complete' && tab.url === "https://www.reddit.com/") {
-        console.log("Redirecting Reddit homepage.");
-        chrome.tabs.update(tabId, { url: rickrollUrl });
+    if (changeInfo.status !== 'complete' || !tab.url) {
         return;
     }
-    // Inject youtube.js on initial page load since it's no longer in the manifest
-    if (changeInfo.status === 'complete' && tab.url && tab.url.includes("youtube.com/watch")) {
-        console.log(`YouTube page loaded. Injecting content script into tab ${tabId}`);
-        chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            files: ['youtube.js']
-        }, () => {
-            if (chrome.runtime.lastError) {
-                // This error is common if the script is already being injected by another listener.
-                if (!chrome.runtime.lastError.message.includes("Cannot create a new script context for the page")) {
-                    console.error(`Initial script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
-                }
-            } else {
-                console.log("Successfully injected youtube.js on page load.");
+
+    const url = tab.url;
+
+    chrome.storage.local.get(['blockYoutubeHomepage', 'blockRedditHomepage', 'strictUrlBlocklist', 'exactUrlBlocklist'], (result) => {
+        const blockYoutubeHomepage = !!(result && result.blockYoutubeHomepage);
+        const blockRedditHomepage = !!(result && result.blockRedditHomepage);
+        const strictUrls = Array.isArray(result && result.strictUrlBlocklist) ? result.strictUrlBlocklist : [];
+        const exactUrls = Array.isArray(result && result.exactUrlBlocklist) ? result.exactUrlBlocklist : [];
+        try {
+            console.log('Tabs.onUpdated: completed load', { tabId, url, blockYoutubeHomepage, blockRedditHomepage, strictUrlCount: strictUrls.length, exactUrlCount: exactUrls.length });
+        } catch (_) {}
+
+        const isYoutubeHomepage = url === 'https://www.youtube.com/' || url === 'https://www.youtube.com';
+        const isRedditHomepage = url === 'https://www.reddit.com/' || url === 'https://www.reddit.com';
+
+        if (isYoutubeHomepage && blockYoutubeHomepage) {
+            console.log('Tabs.onUpdated: blocking YouTube homepage by setting.');
+            chrome.tabs.update(tabId, { url: rickrollUrl });
+            return;
+        }
+
+        if (isRedditHomepage && blockRedditHomepage) {
+            console.log('Tabs.onUpdated: blocking Reddit homepage by setting.');
+            chrome.tabs.update(tabId, { url: rickrollUrl });
+            return;
+        }
+
+        if (url && exactUrls.length > 0) {
+            const exactMatch = exactUrls.includes(url);
+            if (exactMatch) {
+                console.log('Tabs.onUpdated: URL matched exact homepage blocklist. Redirecting.');
+                chrome.tabs.update(tabId, { url: rickrollUrl });
+                return;
             }
-        });
-    }
+        }
+
+        if (url && strictUrls.length > 0) {
+            const match = strictUrls.some(u => urlMatchesStrictRule(url, u));
+            if (match) {
+                console.log('Tabs.onUpdated: URL matched website blocklist. Redirecting.');
+                chrome.tabs.update(tabId, { url: rickrollUrl });
+                return;
+            }
+        }
+
+        // Inject youtube.js on initial page load since it's no longer in the manifest
+        if (url.includes("youtube.com/watch")) {
+            console.log(`YouTube page loaded. Injecting content script into tab ${tabId}`);
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['youtube.js']
+            }, () => {
+                if (chrome.runtime.lastError) {
+                    // This error is common if the script is already being injected by another listener.
+                    if (!chrome.runtime.lastError.message.includes("Cannot create a new script context for the page")) {
+                        console.error(`Initial script injection failed for youtube.js: ${chrome.runtime.lastError.message}`);
+                    }
+                } else {
+                    console.log("Successfully injected youtube.js on page load.");
+                }
+            });
+        }
+    });
 });
 
 // --- Keyword Map Generation (global) ---
@@ -357,7 +427,28 @@ async function handleContentData(data, tabId) {
         return;
     }
 
-    // Print current keyword maps for visibility
+    // Load mode and website URL blocklists
+    const { blockingMode, strictUrlBlocklist, exactUrlBlocklist } = await chrome.storage.local.get(['blockingMode', 'strictUrlBlocklist', 'exactUrlBlocklist']);
+    const rawMode = blockingMode;
+    const mode = (rawMode === 'STRICT' || rawMode === 'STRICTEST') ? 'STRICT' : 'LESS_STRICT';
+    const strictUrls = Array.isArray(strictUrlBlocklist) ? strictUrlBlocklist : [];
+    const exactUrls = Array.isArray(exactUrlBlocklist) ? exactUrlBlocklist : [];
+    try {
+        console.log('HandleContentData: mode + strictUrls', { mode, strictUrlCount: strictUrls.length, exactUrlCount: exactUrls.length });
+    } catch (_) {}
+
+    // Always: hard-block by URL if it matches exact or prefix website blocklists
+    const currentUrl = data.url || null;
+    const exactMatch = currentUrl && exactUrls.includes(currentUrl);
+    const strictMatch = currentUrl && strictUrls.some(u => urlMatchesStrictRule(currentUrl, u));
+    if (exactMatch || strictMatch) {
+        console.log('Website blocklist: URL matched configured URL rules. Redirecting immediately.');
+        chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'This URL is blocked by your website rules.', key: currentUrl, timestamp: Date.now() } });
+        chrome.tabs.update(tabId, { url: rickrollUrl });
+        return;
+    }
+
+    // Print current keyword maps for visibility (for STRICT/LESS_STRICT modes)
     try {
         const { keywordMaps } = await chrome.storage.local.get(['keywordMaps']);
         console.log('Heuristic: current keywordMaps snapshot', keywordMaps);
@@ -374,7 +465,50 @@ async function handleContentData(data, tabId) {
         return;
     }
 
-    // If not found in cache or temp whitelist, attempt heuristic keyword analysis first
+    // If not found in cache or temp whitelist, handle based on mode
+    if (mode === 'STRICT') {
+        // STRICT: prioritize productive signals; if heuristic is inconclusive, defer to a productive-only LLM gate.
+        const heuristic = await analyzeWithKeywords(data);
+        try { console.log('STRICT mode heuristic result', heuristic); } catch (_) {}
+
+        if (heuristic && heuristic.decision === 'allow') {
+            chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: 'STRICT mode: heuristic found strong productive signals.', key: blockKey, timestamp: Date.now() } });
+            console.log('STRICT: allowing due to productive dominance in heuristic.');
+            return;
+        }
+
+        if (heuristic && heuristic.decision === 'block') {
+            chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'STRICT mode: heuristic found strong unwanted/entertainment signals.', key: blockKey, timestamp: Date.now() } });
+            console.log('STRICT: blocking due to unwanted dominance in heuristic.');
+            await addToBlocklist(blockKey);
+            chrome.tabs.update(tabId, { url: rickrollUrl });
+            return;
+        }
+
+        // Heuristic is inconclusive: use productive-only LLM gate
+        const strictClassification = await classifyStrictWithGroq(data);
+        if (!strictClassification) {
+            chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'STRICT mode: LLM unavailable or invalid response; blocking by default.', key: blockKey, timestamp: Date.now() } });
+            console.log('STRICT: LLM failed; blocking by default.');
+            await addToBlocklist(blockKey);
+            chrome.tabs.update(tabId, { url: rickrollUrl });
+            return;
+        }
+
+        if (strictClassification.productive_match === true) {
+            chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: `STRICT mode LLM: ${strictClassification.reasoning}`, key: blockKey, timestamp: Date.now() } });
+            console.log('STRICT: LLM deemed content related to productive categories. Allowing.');
+            return;
+        }
+
+        chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: `STRICT mode LLM: content not clearly related to productive categories. ${strictClassification.reasoning || ''}`.trim(), key: blockKey, timestamp: Date.now() } });
+        console.log('STRICT: LLM did not find strong relation to productive categories. Blocking.');
+        await addToBlocklist(blockKey);
+        chrome.tabs.update(tabId, { url: rickrollUrl });
+        return;
+    }
+
+    // LESS_STRICT (default): heuristic first, then LLM fallback
     const heuristic = await analyzeWithKeywords(data);
     try { console.log('Heuristic: result object', heuristic); } catch (_) {}
     if (heuristic && heuristic.decision !== 'unknown') {
@@ -391,7 +525,6 @@ async function handleContentData(data, tabId) {
         return;
     }
 
-    // Fall back to GROQ classification
     console.log(`No confident heuristic decision for ${blockKey}. Classifying with GROQ.`);
     classifyWithGroq(data, tabId);
 }
@@ -586,6 +719,110 @@ async function classifyWithGroq(data, tabId) {
 
     } catch (error) {
         console.error("Error calling GROQ API:", error);
+    }
+}
+
+// STRICT mode LLM gate: only checks whether content is related to productive categories
+async function classifyStrictWithGroq(data) {
+    const { groqApiKey, productiveContent } = await chrome.storage.local.get(['groqApiKey', 'productiveContent']);
+
+    if (!groqApiKey) {
+        console.log('STRICT LLM: GROQ API key not set.');
+        return null;
+    }
+    if (!productiveContent) {
+        console.log('STRICT LLM: No productiveContent configured.');
+        return null;
+    }
+
+    const { source, channel, subreddit, title, content, description } = data;
+    const blockKey = source === 'youtube' ? channel : subreddit;
+
+    const prompt = `
+You are a STRICT productive-content gatekeeper.
+
+The user has provided ONLY the following list of productive topics/creators/keywords:
+
+  ${productiveContent}
+
+You must decide if the given content is SUBSTANTIALLY or PRIMARILY about one or more of these productive items.
+
+Content details:
+- Source: ${source}
+- ${source === 'youtube' ? 'Channel' : 'Subreddit'}: ${blockKey}
+- Title: ${title}
+- Content/Description: ${content || description || 'Not available'}
+
+Rules:
+- Answer ONLY whether this content clearly belongs to the productive categories above.
+- Ignore entertainment vs non-entertainment; you only check relation to the productive list.
+- Be conservative: if you are unsure or relation is weak/indirect, treat it as NOT related.
+
+Output format (JSON only):
+{
+  "reasoning": "short explanation of whether and why it matches the productive categories, or why it does not",
+  "productive_match": true/false
+}
+`;
+
+    console.log('STRICT LLM: sending productive-only gate prompt to GROQ');
+
+    try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${groqApiKey}`
+            },
+            body: JSON.stringify({
+                model: 'llama-3.1-8b-instant',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.1,
+                max_tokens: 400,
+                top_p: 1,
+                stream: false,
+                stop: null
+            })
+        });
+
+        const result = await response.json().catch(async (e) => {
+            const text = await response.text().catch(() => '');
+            console.error('STRICT LLM: failed to parse JSON body', e, text);
+            return {};
+        });
+        console.log('STRICT LLM: raw GROQ response meta', JSON.stringify({ status: response.status, ok: response.ok, hasError: !!(result && result.error), error: result && result.error, choices: result && result.choices ? result.choices.length : 'n/a' }, null, 2));
+
+        if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
+            console.error('STRICT LLM: invalid response from GROQ API', result);
+            return null;
+        }
+
+        const rawContent = result.choices[0].message.content;
+        let strictClassification;
+        try {
+            strictClassification = JSON.parse(rawContent);
+        } catch (e) {
+            try {
+                const match = rawContent.match(/\{[\s\S]*\}/);
+                if (match) strictClassification = JSON.parse(match[0]);
+            } catch (_) {}
+            if (!strictClassification) {
+                console.error('STRICT LLM: failed to parse JSON from model response', rawContent, e);
+                return null;
+            }
+        }
+
+        console.log('STRICT LLM: parsed classification', strictClassification);
+        // Expecting { reasoning: string, productive_match: true/false }
+        if (typeof strictClassification.productive_match !== 'boolean') {
+            console.warn('STRICT LLM: missing productive_match field, treating as non-productive.');
+            strictClassification.productive_match = false;
+        }
+        return strictClassification;
+
+    } catch (error) {
+        console.error('STRICT LLM: error calling GROQ API', error);
+        return null;
     }
 }
 

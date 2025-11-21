@@ -27,6 +27,7 @@
         <div id="currentPageClassification">Loading...</div>
         <hr>
         <h4>Blocked List</h4>
+        <input type="text" id="blocklistSearch" placeholder="Search blocked channels/subreddits">
         <ul id="classificationsList"></ul>
     </div>
 
@@ -35,21 +36,18 @@
         <label for="groqApiKey">GROQ API Key</label>
         <input type="password" id="groqApiKey" placeholder="Enter your GROQ API Key">
 
-        <label for="youtubeApiKey">YouTube API Key (Optional)</label>
-        <input type="password" id="youtubeApiKey" placeholder="Enter your YouTube API Key">
         <label for="productiveContent">Productive Content</label>
         <textarea id="productiveContent" rows="4" placeholder="Content you consider productive or educational (e.g., 'AI research papers', 'web development tutorials')."></textarea>
 
         <label for="unwantedContent">Unwanted Content</label>
         <textarea id="unwantedContent" rows="4" placeholder="Content you explicitly want to block (e.g., 'celebrity gossip', 'political news about specific topics')."></textarea>
-        
-        <hr>
-        <h4>Advanced Settings</h4>
-        <label for="heuristicDominanceRatio">Unwanted/Productive dominance ratio</label>
-        <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
 
         <button id="saveSettings">Save Settings</button>
         <div id="status"></div>
+
+        <hr>
+        <button id="openAdvancedSettings">Open Advanced Settings</button>
+        <small style="font-size: 11px; color: #555;">Mode, homepage blocking, URL blocklists, and dominance ratio are available in Advanced Settings.</small>
     </div>
 
     <script src="popup.js"></script>

@@ -3,9 +3,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabContents = document.querySelectorAll('.tab-content');
     const classificationsList = document.getElementById('classificationsList');
     const classificationDiv = document.getElementById('currentPageClassification');
+    const blocklistSearchInput = document.getElementById('blocklistSearch');
 
     let originalProductiveContent = '';
     let originalUnwantedContent = '';
+    let currentBlocklist = [];
+    let strictUrls = [];
+    let exactUrls = [];
 
     // --- Tab Navigation ---
     tabs.forEach(tab => {
@@ -62,16 +66,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Settings ---
     const groqApiKeyInput = document.getElementById('groqApiKey');
-    const youtubeApiKeyInput = document.getElementById('youtubeApiKey');
     const productiveContentInput = document.getElementById('productiveContent');
     const unwantedContentInput = document.getElementById('unwantedContent');
-    const heuristicDominanceRatioInput = document.getElementById('heuristicDominanceRatio');
     const saveSettingsButton = document.getElementById('saveSettings');
     const statusDiv = document.getElementById('status');
+    const openAdvancedSettingsButton = document.getElementById('openAdvancedSettings');
 
-    chrome.storage.local.get(['groqApiKey', 'youtubeApiKey', 'productiveContent', 'unwantedContent', 'heuristicDominanceRatio'], (result) => {
+    chrome.storage.local.get(['groqApiKey', 'productiveContent', 'unwantedContent'], (result) => {
         if (result.groqApiKey) groqApiKeyInput.value = result.groqApiKey;
-        if (result.youtubeApiKey) youtubeApiKeyInput.value = result.youtubeApiKey;
         if (result.productiveContent) {
             productiveContentInput.value = result.productiveContent;
             originalProductiveContent = result.productiveContent;
@@ -80,48 +82,55 @@ document.addEventListener('DOMContentLoaded', () => {
             unwantedContentInput.value = result.unwantedContent;
             originalUnwantedContent = result.unwantedContent;
         }
-        const ratio = typeof result.heuristicDominanceRatio === 'number' ? result.heuristicDominanceRatio : 2.0;
-        if (heuristicDominanceRatioInput) heuristicDominanceRatioInput.value = ratio;
     });
 
-    saveSettingsButton.addEventListener('click', () => {
-        const groqApiKey = groqApiKeyInput.value.trim();
-        const youtubeApiKey = youtubeApiKeyInput.value.trim();
-        const productiveContent = productiveContentInput.value.trim();
-        const unwantedContent = unwantedContentInput.value.trim();
-        const ratioVal = parseFloat(heuristicDominanceRatioInput.value);
-        const heuristicDominanceRatio = isNaN(ratioVal) || ratioVal < 1 ? 2.0 : ratioVal;
+    if (saveSettingsButton) {
+        saveSettingsButton.addEventListener('click', () => {
+            const groqApiKey = groqApiKeyInput.value.trim();
+            const productiveContent = productiveContentInput.value.trim();
+            const unwantedContent = unwantedContentInput.value.trim();
 
-        if (!groqApiKey) {
-            statusDiv.textContent = 'GROQ API Key is required.';
-            return;
-        }
+            if (!groqApiKey) {
+                statusDiv.textContent = 'GROQ API Key is required.';
+                return;
+            }
 
-        chrome.storage.local.set({ groqApiKey, youtubeApiKey, productiveContent, unwantedContent, heuristicDominanceRatio }, () => {
-            statusDiv.textContent = 'Settings saved successfully!';
-            const contentChanged = productiveContent !== originalProductiveContent || unwantedContent !== originalUnwantedContent;
-            if (contentChanged) {
-                chrome.runtime.sendMessage({ type: 'generateInstructions', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
+            chrome.storage.local.set({
+                groqApiKey,
+                productiveContent,
+                unwantedContent
+            }, () => {
+                statusDiv.textContent = 'Settings saved successfully!';
+                const contentChanged = productiveContent !== originalProductiveContent || unwantedContent !== originalUnwantedContent;
+                if (contentChanged) {
+                    chrome.runtime.sendMessage({ type: 'generateInstructions', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
+                        if (response && response.success) {
+                            console.log('User instructions are being generated in the background.');
+                            originalProductiveContent = productiveContent;
+                            originalUnwantedContent = unwantedContent;
+                        } else {
+                            console.error('Failed to send message to generate instructions.');
+                        }
+                    });
+                }
+                // Always (re)generate keyword maps on Save to ensure freshness
+                chrome.runtime.sendMessage({ type: 'generateKeywordMaps', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
                     if (response && response.success) {
-                        console.log('User instructions are being generated in the background.');
-                        originalProductiveContent = productiveContent;
-                        originalUnwantedContent = unwantedContent;
+                        console.log('Keyword maps are being generated and saved.');
                     } else {
-                        console.error('Failed to send message to generate instructions.');
+                        console.error('Failed to send message to generate keyword maps.');
                     }
                 });
-            }
-            // Always (re)generate keyword maps on Save to ensure freshness
-            chrome.runtime.sendMessage({ type: 'generateKeywordMaps', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
-                if (response && response.success) {
-                    console.log('Keyword maps are being generated and saved.');
-                } else {
-                    console.error('Failed to send message to generate keyword maps.');
-                }
+                setTimeout(() => { statusDiv.textContent = ''; }, 3000);
             });
-            setTimeout(() => { statusDiv.textContent = ''; }, 3000);
         });
-    });
+    }
+
+    if (openAdvancedSettingsButton) {
+        openAdvancedSettingsButton.addEventListener('click', () => {
+            chrome.tabs.create({ url: chrome.runtime.getURL('advanced.html') });
+        });
+    }
 
     // --- Blocklist Display ---
     function renderBlocklist(list) {
@@ -145,13 +154,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    chrome.storage.local.get({blocklist: []}, (result) => renderBlocklist(result.blocklist));
+    function getFilteredBlocklist() {
+        const query = (blocklistSearchInput && blocklistSearchInput.value || '').toLowerCase().trim();
+        let list = Array.isArray(currentBlocklist) ? currentBlocklist.slice().reverse() : [];
+        if (query) {
+            list = list.filter(key => (key || '').toLowerCase().includes(query));
+        }
+        return list;
+    }
+
+    function renderBlocklistFromState() {
+        renderBlocklist(getFilteredBlocklist());
+    }
+
+    chrome.storage.local.get({blocklist: []}, (result) => {
+        currentBlocklist = result.blocklist || [];
+        renderBlocklistFromState();
+    });
+
+    if (blocklistSearchInput) {
+        blocklistSearchInput.addEventListener('input', () => {
+            renderBlocklistFromState();
+        });
+    }
 
     // --- Listen for all storage changes ---
     chrome.storage.onChanged.addListener((changes, namespace) => {
         if (namespace === 'local' && changes.blocklist) {
             console.log('Blocklist changed, re-rendering.');
-            renderBlocklist(changes.blocklist.newValue);
+            currentBlocklist = changes.blocklist.newValue || [];
+            renderBlocklistFromState();
         }
         if (namespace === 'session') {
             getActiveTabClassification(); // Re-check classification if session data changes

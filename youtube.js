@@ -125,7 +125,8 @@ if (typeof window.runYoutubeAnalysis !== 'function') {
                 source: 'youtube',
                 channel: channelName,
                 title: videoTitle,
-                description: videoDescription
+                description: videoDescription,
+                url: window.location.href
             };
 
             console.log("Successfully extracted data. Preparing to send to background script:", data);

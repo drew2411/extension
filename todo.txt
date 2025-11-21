@@ -1,0 +1,6 @@
+Have logos for top websites that users might want to block (6-8)
+have some more websites like (100) - to suggest to user when they type out the websites name
+beautify website 
+fix blocking and auto saving in advanced settings
+
+

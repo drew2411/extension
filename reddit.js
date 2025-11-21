@@ -36,7 +36,7 @@ const extractData = () => {
     lastProcessedUrl = window.location.href;
     
     const url = window.location.href;
-    let data = { source: 'reddit', comments: [] };
+    let data = { source: 'reddit', comments: [], url };
 
     try {
         if (url.includes('/r/') && url.includes('/comments/')) {

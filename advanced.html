@@ -2,18 +2,121 @@
 <html>
 <head>
     <title>Content Classifier - Advanced Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 10px; }
-        label { display: block; margin-top: 10px; }
-        input, textarea { width: 100%; padding: 5px; margin-top: 5px; }
-        button { margin-top: 10px; padding: 8px 12px; cursor: pointer; }
-        ul { list-style-type: none; padding: 0; }
-        ul li { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #eee; }
-        small { display: block; margin-top: 4px; color: #555; }
-        h2 { margin-top: 0; }
+        body {
+            margin: 24px auto;
+            max-width: 720px;
+            padding: 16px;
+            font-family: "Quicksand", sans-serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: normal;
+            background: radial-gradient(circle at top left, #020617 0, #000000 65%);
+            color: #e5e7eb;
+        }
+        .advanced-root {
+            background: #1A1C30;
+            border-radius: 18px;
+            padding: 18px 18px 22px;
+            box-shadow: 0 22px 48px rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.4);
+        }
+        h2 {
+            margin: 0 0 12px 0;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+        h4 {
+            margin: 16px 0 4px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+        }
+        label {
+            display: block;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+        input {
+            width: 100%;
+            padding: 7px 8px;
+            margin-top: 4px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background-color: rgba(15, 23, 42, 0.9);
+            color: #e5e7eb;
+            font-size: 12px;
+        }
+        input::placeholder {
+            color: #6b7280;
+        }
+        button {
+            margin-top: 8px;
+            padding: 7px 14px;
+            cursor: pointer;
+            border-radius: 999px;
+            border: 2px solid #FF4081;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            background-color: transparent;
+            color: #FF4081;
+            box-shadow: none;
+            transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+        }
+        button:hover {
+            background-color: rgba(255, 64, 129, 0.08);
+            transform: translateY(-1px);
+            box-shadow: 0 0 0 1px rgba(255, 64, 129, 0.35);
+        }
+        button:hover {
+            background-color: #FFFFFF;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+        }
+        button:active {
+            transform: scale(0.98);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 6px 0 0 0;
+        }
+        ul li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.9);
+            font-size: 12px;
+        }
+        ul li button {
+            margin-top: 0;
+            padding: 4px 10px;
+            font-size: 10px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+        ul li button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+        }
+        small {
+            display: block;
+            margin-top: 4px;
+            font-size: 11px;
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
+    <div class="advanced-root">
     <h2>Advanced Settings</h2>
 
     <h4>Mode</h4>
@@ -41,6 +144,7 @@
     <h4>Advanced Settings</h4>
     <label for="heuristicDominanceRatio">Unwanted/Productive dominance ratio</label>
     <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
+    </div>
 
     <script src="advanced.js"></script>
 </body>

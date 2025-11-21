@@ -2,37 +2,172 @@
 <html>
 <head>
     <title>Content Classifier</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; width: 350px; padding: 10px; }
-        .nav { display: flex; border-bottom: 1px solid #ccc; }
-        .nav-tab { padding: 10px; cursor: pointer; }
-        .nav-tab.active { border-bottom: 2px solid blue; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; padding-top: 10px; }
-        label { display: block; margin-top: 10px; }
-        input, textarea { width: 95%; padding: 5px; margin-top: 5px; }
-        button { margin-top: 15px; padding: 10px 15px; cursor: pointer; }
-        #classificationsList { list-style-type: none; padding: 0; }
-        #classificationsList li { display: flex; justify-content: space-between; align-items: center; padding: 5px; border-bottom: 1px solid #eee; }
+        body {
+            margin: 0;
+            width: 360px;
+            font-family: "Quicksand", sans-serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: normal;
+            background: radial-gradient(circle at top left, #020617 0, #000000 65%);
+            color: #e5e7eb;
+        }
+        .popup-root {
+            padding: 12px 14px 16px;
+            box-sizing: border-box;
+        }
+        .nav {
+            display: flex;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.96);
+            padding: 4px;
+            margin-bottom: 10px;
+        }
+        .nav-tab {
+            flex: 1;
+            padding: 8px 10px;
+            cursor: pointer;
+            text-align: center;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+            border-radius: 999px;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .nav-tab.active {
+            background-color: #FF4081;
+            color: #020617;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .card {
+            background: #1A1C30;
+            border-radius: 14px;
+            padding: 12px 12px 14px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.32);
+        }
+        h3, h4 {
+            margin: 0 0 6px 0;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        h3 {
+            font-size: 14px;
+        }
+        h4 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #9ca3af;
+        }
+        label {
+            display: block;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #e5e7eb;
+        }
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 7px 8px;
+            margin-top: 4px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background-color: rgba(15, 23, 42, 0.9);
+            color: #f9fafb;
+            font-size: 12px;
+        }
+        input::placeholder,
+        textarea::placeholder {
+            color: #6b7280;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 70px;
+        }
+        button {
+            margin-top: 12px;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: none;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+        }
+        .btn-primary {
+            background-color: transparent;
+            color: #FF4081;
+            border: 2px solid #FF4081;
+            box-shadow: none;
+        }
+        .btn-primary:hover {
+            background-color: rgba(255, 64, 129, 0.08);
+            transform: translateY(-1px);
+            box-shadow: 0 0 0 1px rgba(255, 64, 129, 0.35);
+        }
+        .btn-secondary {
+            background: rgba(15, 23, 42, 0.9);
+            color: #e5e7eb;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+        }
+        .btn-secondary:hover {
+            background: rgba(31, 41, 55, 0.95);
+        }
+        #classificationsList {
+            list-style-type: none;
+            padding: 0;
+            margin: 8px 0 0 0;
+        }
+        #classificationsList li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.9);
+            font-size: 12px;
+        }
+        #status {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #a5b4fc;
+        }
+        #currentPageClassification {
+            font-size: 12px;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <div class="nav-tab active" data-tab="classifier">Classifier</div>
-        <div class="nav-tab" data-tab="settings">Settings</div>
-    </div>
+    <div class="popup-root">
+        <div class="nav">
+            <div class="nav-tab active" data-tab="classifier">Classifier</div>
+            <div class="nav-tab" data-tab="settings">Settings</div>
+        </div>
 
-    <div id="classifier" class="tab-content active">
-        <h3>Classification</h3>
-        <div id="currentPageClassification">Loading...</div>
-        <hr>
-        <h4>Blocked List</h4>
-        <input type="text" id="blocklistSearch" placeholder="Search blocked channels/subreddits">
-        <ul id="classificationsList"></ul>
-    </div>
+        <div id="classifier" class="tab-content active card">
+            <h3>Classification</h3>
+            <div id="currentPageClassification">Loading...</div>
+            <hr>
+            <h4>Blocked List</h4>
+            <input type="text" id="blocklistSearch" placeholder="Search blocked channels/subreddits">
+            <ul id="classificationsList"></ul>
+        </div>
 
-    <div id="settings" class="tab-content">
-        <h3>Settings</h3>
+        <div id="settings" class="tab-content card">
+            <h3>Settings</h3>
         <label for="groqApiKey">GROQ API Key</label>
         <input type="password" id="groqApiKey" placeholder="Enter your GROQ API Key">
 
@@ -42,12 +177,11 @@
         <label for="unwantedContent">Unwanted Content</label>
         <textarea id="unwantedContent" rows="4" placeholder="Content you explicitly want to block (e.g., 'celebrity gossip', 'political news about specific topics')."></textarea>
 
-        <button id="saveSettings">Save Settings</button>
+        <button id="saveSettings" class="btn-primary">Save Settings</button>
         <div id="status"></div>
 
         <hr>
-        <button id="openAdvancedSettings">Open Advanced Settings</button>
-        <small style="font-size: 11px; color: #555;">Mode, homepage blocking, URL blocklists, and dominance ratio are available in Advanced Settings.</small>
+        <button id="openAdvancedSettings" class="btn-secondary">Open Advanced Settings</button>
     </div>
 
     <script src="popup.js"></script>

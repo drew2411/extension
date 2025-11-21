@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'heuristicDominanceRatio'
     ], (result) => {
         const rawMode = result.blockingMode;
-        const mode = (rawMode === 'STRICT' || rawMode === 'STRICTEST') ? 'STRICT' : 'LESS_STRICT';
+        const mode = (rawMode === 'STRICT' || rawMode === 'STRICTEST') ? 'STRICT' : 'LENIENT';
         if (modeRadios && modeRadios.length) {
             modeRadios.forEach(radio => {
                 radio.checked = (radio.value === mode);
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const selectedModeRadio = Array.from(modeRadios || []).find(r => r.checked);
-        const blockingMode = selectedModeRadio ? selectedModeRadio.value : 'LESS_STRICT';
+        const blockingMode = selectedModeRadio ? selectedModeRadio.value : 'LENIENT';
 
         chrome.storage.local.set({
             blockingMode,
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.textContent = url;
             const removeButton = document.createElement('button');
-            removeButton.textContent = 'Remove';
+            removeButton.textContent = 'REMOVE';
             removeButton.style.marginLeft = '10px';
             removeButton.addEventListener('click', () => {
                 strictUrls = strictUrls.filter(u => u !== url);
@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.textContent = url;
             const removeButton = document.createElement('button');
-            removeButton.textContent = 'Remove';
+            removeButton.textContent = 'REMOVE';
             removeButton.style.marginLeft = '10px';
             removeButton.addEventListener('click', () => {
                 exactUrls = exactUrls.filter(u => u !== url);

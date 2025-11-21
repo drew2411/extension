@@ -1,21 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Content Classifier - Advanced Settings</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
     <style>
+        /* BASE STYLES */
         body {
-            margin: 24px auto;
-            max-width: 720px;
-            padding: 16px;
+            margin: 0;
+            padding: 24px;
+            min-height: 100vh;
             font-family: "Quicksand", sans-serif;
-            font-optical-sizing: auto;
             font-weight: 400;
-            font-style: normal;
             background: radial-gradient(circle at top left, #020617 0, #000000 65%);
             color: #e5e7eb;
+            line-height: 1.5;
         }
         .advanced-root {
             background: #1A1C30;
@@ -23,6 +24,8 @@
             padding: 18px 18px 22px;
             box-shadow: 0 22px 48px rgba(15, 23, 42, 0.85);
             border: 1px solid rgba(148, 163, 184, 0.4);
+            max-width: 400px; /* Constrain width for extension look */
+            margin: auto;
         }
         h2 {
             margin: 0 0 12px 0;
@@ -38,11 +41,12 @@
             color: #9ca3af;
         }
         label {
-            display: block;
+            display: flex; /* Use flex for spacing with toggle/radio */
+            align-items: center;
             margin-top: 8px;
             font-size: 12px;
         }
-        input {
+        input[type="text"], input[type="number"] {
             width: 100%;
             padding: 7px 8px;
             margin-top: 4px;
@@ -51,32 +55,41 @@
             background-color: rgba(15, 23, 42, 0.9);
             color: #e5e7eb;
             font-size: 12px;
+            box-sizing: border-box;
         }
         input::placeholder {
             color: #6b7280;
         }
+        small {
+            display: block;
+            margin-top: 4px;
+            font-size: 11px;
+            color: #9ca3af;
+        }
+        
+        /* 1. PRIMARY PINK BUTTONS (ADD URL) */
         button {
             margin-top: 8px;
             padding: 7px 14px;
             cursor: pointer;
-            border-radius: 999px;
-            border: 2px solid #FF4081;
+            border-radius: 4px; 
+            border: none;
+            font-family: inherit; /* Ensure custom font is applied */
             font-size: 11px;
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            background-color: transparent;
-            color: #FF4081;
-            box-shadow: none;
-            transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+            
+            /* Pink Style Retained */
+            background-color: #FF4081; /* Pink background */
+            color: #FFFFFF; /* White text for contrast */
+            
+            /* Subtle Shadow & Transition */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            transition: all 0.15s ease;
         }
         button:hover {
-            background-color: rgba(255, 64, 129, 0.08);
-            transform: translateY(-1px);
-            box-shadow: 0 0 0 1px rgba(255, 64, 129, 0.35);
-        }
-        button:hover {
-            background-color: #FFFFFF;
+            background-color: #F81F66; /* Slightly darker pink on hover */
             transform: translateY(-1px);
             box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
         }
@@ -84,6 +97,8 @@
             transform: scale(0.98);
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
         }
+
+        /* LIST STYLES (for block lists) */
         ul {
             list-style-type: none;
             padding: 0;
@@ -97,55 +112,187 @@
             border-bottom: 1px solid rgba(31, 41, 55, 0.9);
             font-size: 12px;
         }
+        
+        /* 1.1 INLINE REMOVE BUTTONS (Updated to your specified transparent style) */
         ul li button {
             margin-top: 0;
             padding: 4px 10px;
-            font-size: 10px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            font-size: 12px; /* Set font size to match list item text */
+            margin-left: 10px; /* Separator margin */
+            cursor: pointer;
+            
+            /* Your requested transparent style */
+            background-color: transparent;
+            border: none;
+            color: #FFFFFF; 
+            
+            /* Resetting other properties from main button */
+            text-transform: uppercase; /* Default text is lowercase 'remove' */
+            letter-spacing: normal;
+            font-weight: 400; 
+            box-shadow: none; 
+            transition: color 0.15s ease;
+            border-radius: 0;
         }
         ul li button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+            color: #FF4081; /* Use the pink highlight on hover */
+            background-color: transparent;
+            transform: none;
+            box-shadow: none;
         }
-        small {
-            display: block;
-            margin-top: 4px;
+        ul li button:active {
+            transform: none;
+            box-shadow: none;
+            color: #F81F66; /* Darker pink on active */
+        }
+        
+        /* 2. SEGMENTED CONTROL FOR MODE OPTIONS */
+        .mode-options-container {
+            margin-top: 10px;
+        }
+        .segmented-control {
+            display: flex;
+            background-color: #2D3748; 
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            padding: 2px;
+        }
+        .segmented-control input[type="radio"] {
+            display: none; 
+        }
+        .segmented-control .mode-option {
+            flex-grow: 1;
+            padding: 8px 12px;
+            margin: 0;
+            text-align: center;
+            cursor: pointer;
             font-size: 11px;
-            color: #9ca3af;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            z-index: 2; 
+            transition: color 0.2s ease;
+            white-space: nowrap; 
+        }
+        /* Highlight for selected option (simulating the white pill) */
+        .segmented-control input[type="radio"]:checked + .mode-option {
+            background-color: #FFFFFF;
+            color: #1A1A1A; 
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        
+        /* 3. TOGGLE SWITCHES FOR CHECKBOXES */
+        .toggle-switch-container {
+            display: flex;
+            align-items: center;
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            margin-top: 12px;
+            justify-content: space-between; 
+        }
+        /* Style for the text portion of the label */
+        .toggle-label-text {
+            flex-grow: 1;
+            margin-right: 15px; 
+        }
+        /* Hide default checkbox */
+        .toggle-switch-container input[type="checkbox"] {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            margin: 0;
+            padding: 0;
+        }
+        /* The slider track */
+        .slider {
+            flex-shrink: 0;
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background-color: #444760; /* OFF color */
+            transition: background-color .4s;
+            border-radius: 34px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        /* The slider pill/circle */
+        .slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #D0D0D0; /* Pill color OFF */
+            transition: transform .4s, background-color .4s;
+            border-radius: 50%;
+        }
+        /* When checked: change track color and move pill */
+        .toggle-switch-container input:checked + .slider {
+            background-color: #42A5F5; /* ON color: Electric Blue */
+        }
+        .toggle-switch-container input:checked + .slider:before {
+            transform: translateX(20px);
+            background-color: #FFFFFF; /* Pill color ON */
         }
     </style>
 </head>
 <body>
     <div class="advanced-root">
-    <h2>Advanced Settings</h2>
+        <h2>Advanced Settings</h2>
 
-    <h4>Mode</h4>
-    <div id="modeOptions">
-        <label><input type="radio" name="mode" value="STRICT"> STRICT &mdash; only allow explicitly productive content</label>
-        <label><input type="radio" name="mode" value="LESS_STRICT"> LESS STRICT &mdash; heuristic + AI fallback</label>
+        <h4>Mode</h4>
+        <div class="mode-options-container">
+            <div class="segmented-control" id="modeOptions">
+                <!-- STRICT --><input type="radio" id="strict-mode" name="mode" value="STRICT" checked>
+                <label for="strict-mode" class="mode-option">
+                    STRICT
+                </label>
+                <!-- LENIENT --><input type="radio" id="lenient-mode" name="mode" value="LENIENT">
+                <label for="lenient-mode" class="mode-option">
+                    LENIENT
+                </label>
+            </div>
+            <!-- Description of selected mode (Hidden element for dynamic text) --><small id="modeDescription">
+                STRICT &mdash; only allow explicitly productive content
+            </small>
+        </div>
+
+        <h4>Homepage Blocking</h4>
+        <small>Enabling these only blocks the .com homepages (e.g., youtube.com, reddit.com). Videos, posts, and other pages are still analyzed normally.</small>
+        
+        <!-- Youtube Toggle Switch --><label class="toggle-switch-container">
+            <span class="toggle-label-text">Block YouTube homepage (youtube.com)</span>
+            <input type="checkbox" id="blockYoutubeHomepage">
+            <span class="slider"></span>
+        </label>
+        
+        <!-- Reddit Toggle Switch --><label class="toggle-switch-container">
+            <span class="toggle-label-text">Block Reddit homepage (reddit.com)</span>
+            <input type="checkbox" id="blockRedditHomepage">
+            <span class="slider"></span>
+        </label>
+
+        <h4>Exact homepage URLs</h4>
+        <small>These URLs are blocked only when the address bar matches them exactly.</small>
+        <input type="text" id="exactUrlInput" placeholder="Paste exact homepage URL to block">
+        <button id="addExactUrl">Add exact URL</button>
+        <ul id="exactUrlList">
+            <!-- List items generated by JS --></ul>
+
+        <h4>Website Blocklist</h4>
+        <input type="text" id="strictUrlInput" placeholder="Paste site or URL prefix to always block">
+        <button id="addStrictUrl">Add URL</button>
+        <ul id="strictUrlList">
+             <!-- List items generated by JS --></ul>
+
+        <h4>Advanced Settings</h4>
+        <label for="heuristicDominanceRatio">Unwanted/Productive dominance ratio</label>
+        <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
     </div>
 
-    <h4>Homepage Blocking</h4>
-    <small>Enabling these only blocks the .com homepages (e.g., youtube.com, reddit.com). Videos, posts, and other pages are still analyzed normally.</small>
-    <label><input type="checkbox" id="blockYoutubeHomepage"> Block YouTube homepage (youtube.com)</label>
-    <label><input type="checkbox" id="blockRedditHomepage"> Block Reddit homepage (reddit.com)</label>
-
-    <h4>Exact homepage URLs</h4>
-    <small>These URLs are blocked only when the address bar matches them exactly.</small>
-    <input type="text" id="exactUrlInput" placeholder="Paste exact homepage URL to block">
-    <button id="addExactUrl">Add exact URL</button>
-    <ul id="exactUrlList"></ul>
-
-    <h4>Website Blocklist</h4>
-    <input type="text" id="strictUrlInput" placeholder="Paste site or URL prefix to always block">
-    <button id="addStrictUrl">Add URL</button>
-    <ul id="strictUrlList"></ul>
-
-    <h4>Advanced Settings</h4>
-    <label for="heuristicDominanceRatio">Unwanted/Productive dominance ratio</label>
-    <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
-    </div>
-
+    <!-- Referencing your external JavaScript file -->
     <script src="advanced.js"></script>
 </body>
 </html>

@@ -144,7 +144,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.textContent = key;
             const removeButton = document.createElement('button');
-            removeButton.textContent = 'Remove';
+            removeButton.textContent = 'remove';
+            removeButton.style.backgroundColor = 'transparent';
+            removeButton.style.border = 'none';
+            removeButton.style.color = 'white'; 
+            removeButton.style.cursor = 'pointer'; 
             removeButton.style.marginLeft = '10px';
             removeButton.addEventListener('click', () => {
                 chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key: key });

@@ -42,6 +42,11 @@
 
         <label for="unwantedContent">Unwanted Content</label>
         <textarea id="unwantedContent" rows="4" placeholder="Content you explicitly want to block (e.g., 'celebrity gossip', 'political news about specific topics')."></textarea>
+        
+        <hr>
+        <h4>Advanced Settings</h4>
+        <label for="heuristicDominanceRatio">Unwanted/Productive dominance ratio</label>
+        <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
 
         <button id="saveSettings">Save Settings</button>
         <div id="status"></div>

@@ -65,10 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const youtubeApiKeyInput = document.getElementById('youtubeApiKey');
     const productiveContentInput = document.getElementById('productiveContent');
     const unwantedContentInput = document.getElementById('unwantedContent');
+    const heuristicDominanceRatioInput = document.getElementById('heuristicDominanceRatio');
     const saveSettingsButton = document.getElementById('saveSettings');
     const statusDiv = document.getElementById('status');
 
-    chrome.storage.local.get(['groqApiKey', 'youtubeApiKey', 'productiveContent', 'unwantedContent'], (result) => {
+    chrome.storage.local.get(['groqApiKey', 'youtubeApiKey', 'productiveContent', 'unwantedContent', 'heuristicDominanceRatio'], (result) => {
         if (result.groqApiKey) groqApiKeyInput.value = result.groqApiKey;
         if (result.youtubeApiKey) youtubeApiKeyInput.value = result.youtubeApiKey;
         if (result.productiveContent) {
@@ -79,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
             unwantedContentInput.value = result.unwantedContent;
             originalUnwantedContent = result.unwantedContent;
         }
+        const ratio = typeof result.heuristicDominanceRatio === 'number' ? result.heuristicDominanceRatio : 2.0;
+        if (heuristicDominanceRatioInput) heuristicDominanceRatioInput.value = ratio;
     });
 
     saveSettingsButton.addEventListener('click', () => {
@@ -86,13 +89,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const youtubeApiKey = youtubeApiKeyInput.value.trim();
         const productiveContent = productiveContentInput.value.trim();
         const unwantedContent = unwantedContentInput.value.trim();
+        const ratioVal = parseFloat(heuristicDominanceRatioInput.value);
+        const heuristicDominanceRatio = isNaN(ratioVal) || ratioVal < 1 ? 2.0 : ratioVal;
 
         if (!groqApiKey) {
             statusDiv.textContent = 'GROQ API Key is required.';
             return;
         }
 
-        chrome.storage.local.set({ groqApiKey, youtubeApiKey, productiveContent, unwantedContent }, () => {
+        chrome.storage.local.set({ groqApiKey, youtubeApiKey, productiveContent, unwantedContent, heuristicDominanceRatio }, () => {
             statusDiv.textContent = 'Settings saved successfully!';
             const contentChanged = productiveContent !== originalProductiveContent || unwantedContent !== originalUnwantedContent;
             if (contentChanged) {
@@ -106,6 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
+            // Always (re)generate keyword maps on Save to ensure freshness
+            chrome.runtime.sendMessage({ type: 'generateKeywordMaps', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
+                if (response && response.success) {
+                    console.log('Keyword maps are being generated and saved.');
+                } else {
+                    console.error('Failed to send message to generate keyword maps.');
+                }
+            });
             setTimeout(() => { statusDiv.textContent = ''; }, 3000);
         });
     });

@@ -49,7 +49,7 @@ const extractData = () => {
                 data.content = '';
                 postBody.querySelectorAll('p').forEach(p => data.content += p.innerText + '\n');
                 data.content = data.content.trim();
-                console.log(`Extracted post content: ${data.content.substring(0, 100)}...`);
+                console.log(`Extracted post content: ${data.content.substring(0,300)}...`);
             } else {
                 console.warn("Could not find post content body.");
             }

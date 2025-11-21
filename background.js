@@ -9,7 +9,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         chrome.tabs.update(tabId, { url: rickrollUrl });
         return;
     }
-
     // Inject youtube.js on initial page load since it's no longer in the manifest
     if (changeInfo.status === 'complete' && tab.url && tab.url.includes("youtube.com/watch")) {
         console.log(`YouTube page loaded. Injecting content script into tab ${tabId}`);
@@ -28,6 +27,217 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         });
     }
 });
+
+// --- Keyword Map Generation (global) ---
+async function generateKeywordMaps(userBio, groqApiKey) {
+    if (!userBio) return null;
+    const { productive = '', unwanted = '' } = userBio || {};
+    const productiveTerms = productive.split(',').map(s => s.trim()).filter(Boolean);
+    const unwantedTerms = unwanted.split(',').map(s => s.trim()).filter(Boolean);
+    if (productiveTerms.length === 0 && unwantedTerms.length === 0) return null;
+    try { console.log('KeywordMaps: generating', { productiveTermsCount: productiveTerms.length, unwantedTermsCount: unwantedTerms.length }); } catch (_) {}
+
+    const prompt = `
+You expand user-provided topics into keyword lists for fast local matching.
+
+Return a single JSON object with two maps: "productive" and "unwanted".
+Each map's keys are the EXACT user terms below, and each value is an array of 8-15 short keywords/phrases including synonyms, slang, channel names, common hashtags, and misspellings related to that term.
+Keep keywords lowercase, concise, no duplicates, no explanations.
+
+User terms:
+- Productive: ${productiveTerms.join(', ') || 'None'}
+- Unwanted: ${unwantedTerms.join(', ') || 'None'}
+
+Output strictly as JSON like:
+{
+  "productive": { "<term>": ["k1","k2",...] },
+  "unwanted": { "<term>": ["k1","k2",...] }
+}`;
+
+    try {
+        try { console.log('KeywordMaps: sending request to GROQ'); } catch (_) {}
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${groqApiKey}`
+            },
+            body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.2,
+                max_tokens: 1000,
+                top_p: 1,
+                stream: false,
+                stop: null
+            })
+        });
+        const result = await response.json().catch(async (e) => {
+            const text = await response.text().catch(() => '');
+            console.error('KeywordMaps: failed to parse JSON body', e, text);
+            return {};
+        });
+        try {
+            console.log('KeywordMaps: raw GROQ response received', {
+                ok: response.ok,
+                status: response.status,
+                hasError: !!(result && result.error),
+                errorMessage: result && result.error ? (result.error.message || JSON.stringify(result.error)) : undefined,
+                choices: Array.isArray(result.choices) ? result.choices.length : 'n/a'
+            });
+        } catch (_) {}
+        if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
+            console.error('Invalid response from GROQ API for keyword maps:', result);
+            return null;
+        }
+        const rawContent = result.choices[0].message.content;
+        let parsed;
+        try {
+            parsed = JSON.parse(rawContent);
+        } catch (e) {
+            // Try to extract a JSON object from text
+            try {
+                const match = rawContent.match(/\{[\s\S]*\}/);
+                if (match) parsed = JSON.parse(match[0]);
+            } catch (_) {}
+            if (!parsed) {
+                console.error('KeywordMaps: failed to parse JSON content', { rawContent }, e);
+                return null;
+            }
+        }
+
+        // Normalize: lowercase and unique.
+        // - Always include the original term itself as a keyword.
+        // - Also include token-level pieces of each keyword phrase for fuzzier matching.
+        const normalizeMap = (m = {}) => {
+            const out = {};
+            Object.keys(m).forEach(term => {
+                const key = term.trim();
+                const set = new Set((m[term] || []).map(x => (x || '').toString().toLowerCase().trim()).filter(Boolean));
+                if (key) {
+                    set.add(key.toLowerCase());
+                }
+                // Add token-level variants from all current keywords
+                const existing = Array.from(set);
+                existing.forEach(val => {
+                    val.split(/[^a-z0-9]+/).forEach(tok => {
+                        const t = tok.trim();
+                        if (t.length >= 3) {
+                            set.add(t);
+                        }
+                    });
+                });
+                out[key] = Array.from(set);
+            });
+            return out;
+        };
+
+        const maps = {
+            productive: normalizeMap(parsed.productive || {}),
+            unwanted: normalizeMap(parsed.unwanted || {})
+        };
+        try {
+            console.log('KeywordMaps: normalized maps', {
+                productiveTerms: Object.keys(maps.productive || {}).length,
+                unwantedTerms: Object.keys(maps.unwanted || {}).length
+            });
+        } catch (_) {}
+        return maps;
+    } catch (e) {
+        console.error('Error generating keyword maps:', e);
+        return null;
+    }
+}
+
+// --- Heuristic Analysis using Keyword Maps (global) ---
+async function analyzeWithKeywords(data) {
+    try { console.log('Heuristic: entered analyzeWithKeywords'); } catch (_) {}
+    const { keywordMaps, heuristicDominanceRatio } = await chrome.storage.local.get(['keywordMaps', 'heuristicDominanceRatio']);
+    if (!keywordMaps) return { decision: 'unknown', reason: 'No keyword maps available.' };
+    const dominance = typeof heuristicDominanceRatio === 'number' && heuristicDominanceRatio >= 1 ? heuristicDominanceRatio : 2.0;
+    try { console.log('Heuristic: maps loaded', { productiveTerms: Object.keys(keywordMaps.productive || {}).length, unwantedTerms: Object.keys(keywordMaps.unwanted || {}).length, dominance }); } catch (_) {}
+
+    // Collect text fields (include identifiers like channel/subreddit)
+    const fields = [];
+    if (data.title) fields.push(data.title);
+    if (data.description) fields.push(data.description);
+    if (data.content) fields.push(data.content);
+    if (data.channel) fields.push(data.channel);
+    if (data.subreddit) fields.push(data.subreddit);
+    if (Array.isArray(data.comments)) fields.push(data.comments.join('\n'));
+    const text = fields.join('\n').toLowerCase();
+    if (!text) return { decision: 'unknown', reason: 'Insufficient content text.' };
+    try { console.log('Heuristic: text prepared', { title: !!data.title, description: !!data.description, content: !!data.content, comments: Array.isArray(data.comments) ? data.comments.length : 0, textLength: text.length }); } catch (_) {}
+
+    // Flatten keyword lists
+    const flatten = (map) => Object.values(map || {}).flat();
+    const productiveKw = new Set(flatten(keywordMaps.productive));
+    const unwantedKw = new Set(flatten(keywordMaps.unwanted));
+
+    // Count occurrences (substring match, whole-word-ish by simple regex)
+    const countMatches = (kwSet, label) => {
+        let count = 0;
+        const hitKeys = [];
+        const hitsByKeyword = {};
+        kwSet.forEach(kw => {
+            if (!kw) return;
+            try {
+                const pattern = new RegExp(`(^|[^a-z0-9])${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'gi');
+                const matches = text.match(pattern);
+                if (matches && matches.length > 0) {
+                    const m = matches.length;
+                    count += m;
+                    hitKeys.push(kw);
+                    hitsByKeyword[kw] = (hitsByKeyword[kw] || 0) + m;
+                }
+            } catch (_) {}
+        });
+        // Sort keywords by count desc
+        const breakdown = Object.entries(hitsByKeyword)
+            .sort((a,b) => b[1] - a[1])
+            .map(([k,v]) => ({ keyword: k, hits: v }));
+        try {
+            console.log(`Heuristic: ${label} match summary`, {
+                hits: count,
+                uniqueKeywordsMatched: hitKeys.length,
+                topKeywords: breakdown.slice(0, 20)
+            });
+        } catch (_) {}
+        return { count, hitKeys, hitsByKeyword, breakdown };
+    };
+
+    const prod = countMatches(productiveKw, 'productive');
+    const unwn = countMatches(unwantedKw, 'unwanted');
+    const prodHits = prod.count;
+    const unwnHits = unwn.count;
+    try {
+        console.log('Heuristic: totals', { prodHits, unwnHits, totalHits: prodHits + unwnHits });
+        console.log('Heuristic: productive breakdown', prod.breakdown.slice(0, 50));
+        console.log('Heuristic: unwanted breakdown', unwn.breakdown.slice(0, 50));
+    } catch (_) {}
+
+    const totalHits = prodHits + unwnHits;
+    if (totalHits < 3) {
+        try { console.log('Heuristic: inconclusive due to low total hits'); } catch (_) {}
+        return { decision: 'unknown', reason: `Too few keyword hits (prod=${prodHits}, unwn=${unwnHits}).` };
+    }
+
+    // Decision thresholds
+    const ratio = unwnHits / Math.max(1, prodHits);
+    if (unwnHits >= 3 && ratio >= dominance) {
+        try { console.log('Heuristic: decision block', { unwnHits, prodHits, ratio, dominance }); } catch (_) {}
+        return { decision: 'block', reason: `Unwanted dominates (unwanted=${unwnHits}, productive=${prodHits}, ratio=${ratio.toFixed(2)}).` };
+    }
+    const invRatio = prodHits / Math.max(1, unwnHits);
+    if (prodHits >= 3 && invRatio >= dominance) {
+        try { console.log('Heuristic: decision allow', { prodHits, unwnHits, ratio: invRatio, dominance }); } catch (_) {}
+        return { decision: 'allow', reason: `Productive dominates (productive=${prodHits}, unwanted=${unwnHits}, ratio=${invRatio.toFixed(2)}).` };
+    }
+    try { console.log('Heuristic: inconclusive ratio', { prodHits, unwnHits, ratio, invRatio, dominance }); } catch (_) {}
+    const result = { decision: 'unknown', reason: `Inconclusive ratio (productive=${prodHits}, unwanted=${unwnHits}).` };
+    try { console.log('Heuristic: returning result', result); } catch (_) {}
+    return result;
+}
 
 // 2. Listen for SPA navigations
 chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
@@ -72,6 +282,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         removeFromBlocklist(message.key).then(() => {
             sendResponse({success: true});
         });
+    } else if (message.type === 'generateKeywordMaps') {
+        console.log("Received request to generate keyword maps with bio:", message.userBio);
+        generateKeywordMaps(message.userBio, message.groqApiKey).then(keywordMaps => {
+            if (keywordMaps) {
+                chrome.storage.local.set({ keywordMaps }, () => {
+                    console.log("Keyword maps saved.");
+                    chrome.storage.local.get(['keywordMaps'], (res) => {
+                        const km = res.keywordMaps || {};
+                        console.log('Keyword maps persisted snapshot', {
+                            productiveTerms: km.productive ? Object.keys(km.productive).length : 0,
+                            unwantedTerms: km.unwanted ? Object.keys(km.unwanted).length : 0,
+                        });
+                        sendResponse({ success: true });
+                    });
+                });
+            } else {
+                console.error("Keyword map generation failed.");
+                sendResponse({ success: false });
+            }
+        });
     } else if (message.type === 'generateInstructions') {
         console.log("Received request to generate instructions with bio:", message.userBio);
         generateUserInstructions(message.userBio, message.groqApiKey).then(instructions => {
@@ -102,6 +332,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 
 async function handleContentData(data, tabId) {
+    try {
+        console.log('HandleContentData: entered', {
+            tabId,
+            source: data.source,
+            channel: data.channel,
+            subreddit: data.subreddit,
+            titlePreview: (data.title || '').slice(0, 120),
+            descriptionPreview: (data.description || data.content || '').slice(0, 120)
+        });
+    } catch (_) {}
     const { source, channel, subreddit } = data;
     const blockKey = source === 'youtube' ? channel : subreddit;
 
@@ -117,6 +357,14 @@ async function handleContentData(data, tabId) {
         return;
     }
 
+    // Print current keyword maps for visibility
+    try {
+        const { keywordMaps } = await chrome.storage.local.get(['keywordMaps']);
+        console.log('Heuristic: current keywordMaps snapshot', keywordMaps);
+    } catch (e) {
+        console.warn('Heuristic: could not load keywordMaps for logging', e);
+    }
+
     // Check permanent blocklist (cache)
     const blocklist = await getBlocklist();
     if (blocklist.includes(blockKey)) {
@@ -126,8 +374,25 @@ async function handleContentData(data, tabId) {
         return;
     }
 
-    // If not found in cache or temp whitelist, classify with GROQ
-    console.log(`No cache hit for ${blockKey}. Classifying with GROQ.`);
+    // If not found in cache or temp whitelist, attempt heuristic keyword analysis first
+    const heuristic = await analyzeWithKeywords(data);
+    try { console.log('Heuristic: result object', heuristic); } catch (_) {}
+    if (heuristic && heuristic.decision !== 'unknown') {
+        const entertainment = heuristic.decision === 'block';
+        const reasoning = heuristic.reason;
+        chrome.storage.session.set({ [tabId]: { entertainment, reasoning, key: blockKey, timestamp: Date.now() } });
+        if (entertainment) {
+            console.log(`Heuristic classified ${blockKey} as entertainment. Blocking.`);
+            await addToBlocklist(blockKey);
+            chrome.tabs.update(tabId, { url: rickrollUrl });
+        } else {
+            console.log(`Heuristic classified ${blockKey} as not entertainment.`);
+        }
+        return;
+    }
+
+    // Fall back to GROQ classification
+    console.log(`No confident heuristic decision for ${blockKey}. Classifying with GROQ.`);
     classifyWithGroq(data, tabId);
 }
 
@@ -266,16 +531,19 @@ async function classifyWithGroq(data, tabId) {
                 model: "llama-3.1-8b-instant",
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.1,
-                max_tokens: 400, // Increased to allow for longer reasoning
+                max_tokens: 1000, // Increased to allow for longer reasoning
                 top_p: 1,
                 stream: false,
-                response_format: { type: "json_object" },
                 stop: null
             })
         });
 
-        const result = await response.json();
-        console.log("Received raw response from GROQ:", JSON.stringify(result, null, 2));
+        const result = await response.json().catch(async (e) => {
+            const text = await response.text().catch(() => '');
+            console.error('Classification: failed to parse JSON body', e, text);
+            return {};
+        });
+        console.log("Received raw response from GROQ:", JSON.stringify({ status: response.status, ok: response.ok, hasError: !!(result && result.error), error: result && result.error, choices: result && result.choices ? result.choices.length : 'n/a' }, null, 2));
 
         if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
             console.error("Invalid response from GROQ API:", result);
@@ -287,8 +555,15 @@ async function classifyWithGroq(data, tabId) {
         try {
             classification = JSON.parse(rawContent);
         } catch (e) {
-            console.error("Failed to parse JSON from model response:", rawContent, e);
-            return;
+            // Try to extract JSON from text
+            try {
+                const match = rawContent.match(/\{[\s\S]*\}/);
+                if (match) classification = JSON.parse(match[0]);
+            } catch (_) {}
+            if (!classification) {
+                console.error("Failed to parse JSON from model response:", rawContent, e);
+                return;
+            }
         }
 
         console.log("GROQ Classification:", classification);

@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
-    "https://*.reddit.com/*"
+    "https://*.reddit.com/*",
+    "https://api.groq.com/*"
   ],
   "background": {
     "service_worker": "background.js"

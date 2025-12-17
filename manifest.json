@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Content Classifier",
-  "version": "1.0",
-  "description": "Classifies YouTube and Reddit content as entertainment and blocks it if necessary.",
+  "name": "Custom Content Blocker: Improve Productivity",
+  "version": "2.0",
+  "description": "Block custom content on Reddit and YouTube. Includes full website blocking, homepage-only blocking. Requires user-provided Groq API Key.",
   "permissions": [
     "storage",
     "tabs",
@@ -19,7 +19,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Content Classifier"
+    "default_title": "Selective Content Blocker"
   },
   "content_scripts": [
     {
@@ -27,5 +27,12 @@
       "js": ["reddit.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "logo_16.png",
+    "32": "logo_32.png",
+    "48": "logo_48.png",
+    "128": "logo_128.png"
+  }
+
 }

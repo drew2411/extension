@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const modeRadios = document.querySelectorAll('input[name="mode"]');
+    const modeDescription = document.getElementById('modeDescription'); // Added reference
     const blockYoutubeHomepageCheckbox = document.getElementById('blockYoutubeHomepage');
     const blockRedditHomepageCheckbox = document.getElementById('blockRedditHomepage');
     const heuristicDominanceRatioInput = document.getElementById('heuristicDominanceRatio');
@@ -22,12 +23,17 @@ document.addEventListener('DOMContentLoaded', () => {
         'heuristicDominanceRatio'
     ], (result) => {
         const rawMode = result.blockingMode;
+        // The mode must be STRICT or LENIENT for the UI, regardless of old 'STRICTEST'
         const mode = (rawMode === 'STRICT' || rawMode === 'STRICTEST') ? 'STRICT' : 'LENIENT';
+        
         if (modeRadios && modeRadios.length) {
             modeRadios.forEach(radio => {
                 radio.checked = (radio.value === mode);
             });
         }
+        
+        // FIX 1: Initial description update on load
+        updateModeDescriptionUI(mode); 
 
         if (blockYoutubeHomepageCheckbox) {
             blockYoutubeHomepageCheckbox.checked = !!result.blockYoutubeHomepage;
@@ -46,10 +52,24 @@ document.addEventListener('DOMContentLoaded', () => {
         renderStrictUrls(strictUrls);
         renderExactUrls(exactUrls);
     });
+    
+    // Function to update the description text
+    function updateModeDescriptionUI(mode) {
+        if (!modeDescription) return;
+        if (mode === 'STRICT') {
+            modeDescription.textContent = 'STRICT - only explicitly productive content';
+        } else {
+            modeDescription.textContent = 'LENIENT - more generally deemed productive content';
+        }
+    }
 
     if (modeRadios && modeRadios.length) {
         modeRadios.forEach(radio => {
-            radio.addEventListener('change', saveCoreAdvancedSettings);
+            radio.addEventListener('change', (event) => {
+                saveCoreAdvancedSettings();
+                // FIX 2: Update description immediately when mode changes
+                updateModeDescriptionUI(event.target.value); 
+            });
         });
     }
 
@@ -83,12 +103,40 @@ document.addEventListener('DOMContentLoaded', () => {
             blockRedditHomepage: !!(blockRedditHomepageCheckbox && blockRedditHomepageCheckbox.checked)
         });
     }
+    
+    // Function to apply the consistent transparent button styles
+    function applyRemoveButtonStyles(button) {
+        button.textContent = 'remove';
+        button.style.backgroundColor = 'transparent';
+        button.style.border = 'none';
+        button.style.color = 'white'; 
+        button.style.cursor = 'pointer'; 
+        button.style.marginLeft = '10px';
+        button.style.textTransform = 'lowercase'; 
+        button.style.fontWeight = '400';
+        button.style.padding = '0'; 
+        button.style.fontSize = '12px'; 
+
+        // Add hover/active state handling for visual feedback
+        button.addEventListener('mouseover', () => { button.style.color = '#FF4081'; });
+        button.addEventListener('mouseout', () => { button.style.color = 'white'; });
+        button.addEventListener('mousedown', () => { button.style.color = '#F81F66'; });
+        button.addEventListener('mouseup', () => { 
+            // Return to hover or default color depending on mouse position
+            if (button.matches(':hover')) {
+                button.style.color = '#FF4081';
+            } else {
+                button.style.color = 'white';
+            }
+        });
+    }
+
 
     function renderStrictUrls(list) {
         if (!strictUrlList) return;
         strictUrlList.innerHTML = '';
         if (!list || list.length === 0) {
-            strictUrlList.innerHTML = '<li>No strict URLs configured.</li>';
+            strictUrlList.innerHTML = '<li style="color: #9ca3af; font-style: italic;">No strict URLs configured.</li>';
             return;
         }
         const ordered = list.slice().reverse();
@@ -96,8 +144,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.textContent = url;
             const removeButton = document.createElement('button');
-            removeButton.textContent = 'REMOVE';
-            removeButton.style.marginLeft = '10px';
+            
+            // Apply all custom styles
+            applyRemoveButtonStyles(removeButton); 
+
             removeButton.addEventListener('click', () => {
                 strictUrls = strictUrls.filter(u => u !== url);
                 chrome.storage.local.set({ strictUrlBlocklist: strictUrls }, () => {
@@ -113,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!exactUrlList) return;
         exactUrlList.innerHTML = '';
         if (!list || list.length === 0) {
-            exactUrlList.innerHTML = '<li>No exact URLs configured.</li>';
+            exactUrlList.innerHTML = '<li style="color: #9ca3af; font-style: italic;">No exact URLs configured.</li>';
             return;
         }
         const ordered = list.slice().reverse();
@@ -121,8 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.textContent = url;
             const removeButton = document.createElement('button');
-            removeButton.textContent = 'REMOVE';
-            removeButton.style.marginLeft = '10px';
+            
+            // Apply all custom styles
+            applyRemoveButtonStyles(removeButton);
+
             removeButton.addEventListener('click', () => {
                 exactUrls = exactUrls.filter(u => u !== url);
                 chrome.storage.local.set({ exactUrlBlocklist: exactUrls }, () => {

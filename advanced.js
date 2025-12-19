@@ -1,3 +1,5 @@
+// advanced.js
+
 document.addEventListener('DOMContentLoaded', () => {
     const modeRadios = document.querySelectorAll('input[name="mode"]');
     const modeDescription = document.getElementById('modeDescription'); // Added reference

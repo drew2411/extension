@@ -6,3 +6,8 @@ beautify website
 also add whitelist for allowed channels
 
 something has to be done about the blocklist, whitelist if a users preferences change
+
+
+timer for websites
+bugs: have to close the tab to stop being rickrolled (even if go back, if u stay on rickroll, u arent rickrolled repeatedly anymore)
+slow wifi - need to make retries so that analysis happens

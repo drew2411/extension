@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Custom Content Blocker: Improve Productivity",
-  "version": "2.0",
+  "version": "3",
   "description": "Block custom content on Reddit and YouTube. Includes full website blocking, homepage-only blocking. Requires user-provided Groq API Key.",
   "permissions": [
     "storage",
@@ -10,12 +10,13 @@
     "webNavigation"
   ],
   "host_permissions": [
-    "https://*.youtube.com/*",
+    "https://*.youtube.com/*", 
     "https://*.reddit.com/*",
     "https://api.groq.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type":"module"
   },
   "action": {
     "default_popup": "popup.html",

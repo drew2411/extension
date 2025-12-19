@@ -1,3 +1,5 @@
+// youtube.js
+
 console.log("YouTube content script injected/re-injected. v6");
 
 // Check if the main function has already been defined in this context.

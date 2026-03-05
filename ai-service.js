@@ -9,7 +9,7 @@ export async function generateKeywordMaps(userBio, groqApiKey) {
     const productiveTerms = productive.split(',').map(s => s.trim()).filter(Boolean);
     const unwantedTerms = unwanted.split(',').map(s => s.trim()).filter(Boolean);
     if (productiveTerms.length === 0 && unwantedTerms.length === 0) return null;
-    try { console.log('KeywordMaps: generating', { productiveTermsCount: productiveTerms.length, unwantedTermsCount: unwantedTerms.length }); } catch (_) {}
+    try { console.log('KeywordMaps: generating', { productiveTermsCount: productiveTerms.length, unwantedTermsCount: unwantedTerms.length }); } catch (_) { }
 
     const prompt = `
 You expand user-provided topics into keyword lists for fast local matching.
@@ -29,7 +29,7 @@ Output strictly as JSON like:
 }`;
 
     try {
-        try { console.log('KeywordMaps: sending request to GROQ'); } catch (_) {}
+        try { console.log('KeywordMaps: sending request to GROQ'); } catch (_) { }
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -59,7 +59,7 @@ Output strictly as JSON like:
                 errorMessage: result && result.error ? (result.error.message || JSON.stringify(result.error)) : undefined,
                 choices: Array.isArray(result.choices) ? result.choices.length : 'n/a'
             });
-        } catch (_) {}
+        } catch (_) { }
         if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
             console.error('Invalid response from GROQ API for keyword maps:', result);
             return null;
@@ -73,7 +73,7 @@ Output strictly as JSON like:
             try {
                 const match = rawContent.match(/\{[\s\S]*\}/);
                 if (match) parsed = JSON.parse(match[0]);
-            } catch (_) {}
+            } catch (_) { }
             if (!parsed) {
                 console.error('KeywordMaps: failed to parse JSON content', { rawContent }, e);
                 return null;
@@ -115,7 +115,7 @@ Output strictly as JSON like:
                 productiveTerms: Object.keys(maps.productive || {}).length,
                 unwantedTerms: Object.keys(maps.unwanted || {}).length
             });
-        } catch (_) {}
+        } catch (_) { }
         return maps;
     } catch (e) {
         console.error('Error generating keyword maps:', e);
@@ -194,9 +194,7 @@ export async function generateUserInstructions(userBio, groqApiKey) {
     }
 }
 
-export async function classifyWithGroq(data) {
-    const { groqApiKey, productiveContent, unwantedContent, userInstructions } = await chrome.storage.local.get(['groqApiKey', 'productiveContent', 'unwantedContent', 'userInstructions']);
-
+export async function classifyWithGroq(data, groqApiKey, productiveContent, unwantedContent, userInstructions) {
     if (!groqApiKey) {
         console.log("GROQ API key not set. Cannot classify.");
         return;
@@ -244,7 +242,7 @@ export async function classifyWithGroq(data) {
           "entertainment": true/false
         }
     `;
-    
+
     console.log("Sending prompt to GROQ for classification:", prompt);
 
     try {
@@ -274,7 +272,7 @@ export async function classifyWithGroq(data) {
 
         if (!response.ok || result.error || !result.choices || result.choices.length === 0) {
             console.error("Invalid response from GROQ API:", result);
-            return; 
+            return;
         }
 
         const rawContent = result.choices[0].message.content;
@@ -286,17 +284,13 @@ export async function classifyWithGroq(data) {
             try {
                 const match = rawContent.match(/\{[\s\S]*\}/);
                 if (match) classification = JSON.parse(match[0]);
-            } catch (_) {}
+            } catch (_) { }
             if (!classification) {
                 console.error("Failed to parse JSON from model response:", rawContent, e);
                 return;
             }
         }
 
-        console.log("GROQ Classification:", classification);
-        console.log("TRYING TO FIGURE THIS OUT!!!");
-        console.log(`${classification.entertainment}`);
-        console.log(`${blockKey}`);
         return {
             entertainment: classification.entertainment,
             reasoning: classification.reasoning,
@@ -304,21 +298,6 @@ export async function classifyWithGroq(data) {
             shouldBlock: classification.entertainment === true,
             timestamp: Date.now()
         };
-        // const resultForPopup = {
-        //     entertainment: classification.entertainment,
-        //     reasoning: classification.reasoning,
-        //     key: blockKey,
-        //     timestamp: Date.now()
-        // };
-        // chrome.storage.session.set({ [tabId]: resultForPopup });
-
-        // if (classification.entertainment === true) {
-        //     console.log(`Classified ${blockKey} as entertainment. Reason: ${classification.reasoning}. Blocking.`);
-        //     await addToBlocklist(blockKey);
-        //     chrome.tabs.update(tabId, { url: rickrollUrl });
-        // } else {
-        //     console.log(`Classified ${blockKey} as not entertainment. Reason: ${classification.reasoning}.`);
-        // }
 
     } catch (error) {
         console.error("Error calling GROQ API:", error);
@@ -326,9 +305,7 @@ export async function classifyWithGroq(data) {
 }
 
 // STRICT mode LLM gate: only checks whether content is related to productive categories
-export async function classifyStrictWithGroq(data) {
-    const { groqApiKey, productiveContent } = await chrome.storage.local.get(['groqApiKey', 'productiveContent']);
-
+export async function classifyStrictWithGroq(data, groqApiKey, productiveContent) {
     if (!groqApiKey) {
         console.log('STRICT LLM: GROQ API key not set.');
         return null;
@@ -408,7 +385,7 @@ Output format (JSON only):
             try {
                 const match = rawContent.match(/\{[\s\S]*\}/);
                 if (match) strictClassification = JSON.parse(match[0]);
-            } catch (_) {}
+            } catch (_) { }
             if (!strictClassification) {
                 console.error('STRICT LLM: failed to parse JSON from model response', rawContent, e);
                 return null;

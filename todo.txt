@@ -11,3 +11,11 @@ something has to be done about the blocklist, whitelist if a users preferences c
 timer for websites
 bugs: have to close the tab to stop being rickrolled (even if go back, if u stay on rickroll, u arent rickrolled repeatedly anymore)
 slow wifi - need to make retries so that analysis happens
+
+
+7.3
+v3 published
+need to consider for content timer - 
+only what is unproductive explicitly
+OR
+generalised unproductive + 

@@ -550,27 +550,25 @@
                 </small>
             </section>
 
-            <!-- HOMEPAGE BLOCKING TAB -->
             <section class="tab-section" id="tab-homepage">
                 <h3>Homepage Blocking</h3>
-                <small>Set daily time limits for major platforms. <b>0 minutes</b> means always blocked.</small>
+                <small>Set daily time limits for homepage domains. <b>0 minutes</b> means always blocked, <b>-1</b> means no limit.</small>
                 
-                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.3); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1);">
-                        <span style="font-weight: 500;">YouTube (youtube.com)</span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <input type="number" id="youtubeLimitMinutes" min="0" placeholder="Min" style="width: 70px; margin-top: 0; padding: 6px 10px;">
-                            <small style="margin-top: 0;">min</small>
+                <div id="homepageListContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;"></div>
+                
+                <!-- Add custom homepage form -->
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Homepage Limit</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newHomepageDomain" placeholder="e.g., twitter.com">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <input type="number" id="newHomepageLimit" min="-1" placeholder="Daily Limit (Minutes, e.g., 15)" style="margin-top:0;">
+                            </div>
+                            <button id="addHomepageBtn" style="margin-top: 0; padding: 9px 18px;">Add Homepage</button>
                         </div>
                     </div>
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.3); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1);">
-                        <span style="font-weight: 500;">Reddit (reddit.com)</span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <input type="number" id="redditLimitMinutes" min="0" placeholder="Min" style="width: 70px; margin-top: 0; padding: 6px 10px;">
-                            <small style="margin-top: 0;">min</small>
-                        </div>
-                    </div>
+                    <p id="newHomepageStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
                 </div>
 
                 <h4 style="margin-top: 30px;">Exact homepage URLs</h4>
@@ -599,51 +597,28 @@
                 <ul id="strictUrlList"></ul>
             </section>
 
-            <!-- CONTENT TIMERS TAB -->
-            <section class="tab-section" id="tab-content-timers">
+            <!-- CONTENT TIMERS TAB -->            <section class="tab-section" id="tab-content-timers">
                 <h3>Content Timers</h3>
-                <small>Set daily limits for <b>unproductive</b> content on YouTube and Reddit. Only content classified as entertainment counts toward the timer. Leave blank or set to -1 to disable (content will be blocked instantly as usual).</small>
+                <small>Set daily limits for <b>unproductive</b> content on YouTube, Reddit, or other domains you choose. Only content classified as entertainment counts toward the timer.</small>
 
-                <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;">
-                    <!-- YouTube unproductive timer -->
-                    <div style="background: rgba(15, 23, 42, 0.3); padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1);">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 500;">YouTube</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <input type="number" id="ytUnproductiveLimit" min="-1" placeholder="Min" style="width: 70px; margin-top: 0; padding: 6px 10px;">
-                                <small style="margin-top: 0;">min/day</small>
+                <!-- Dynamically populated timers -->
+                <div id="timersListContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;"></div>
+
+                <!-- Add custom timer form (Advanced style) -->
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Content Timer</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newTimerName" placeholder="Timer Name (e.g., Social Media)">
+                        <input type="text" id="newTimerDomains" placeholder="Domains, comma separated (e.g., instagram.com, facebook.com)">
+                        <input type="text" id="newTimerExclusions" placeholder="Excluded Domains, comma separated (optional, e.g., youtube.com)">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <input type="number" id="newTimerLimit" min="-1" placeholder="Daily Limit (Minutes, e.g., 15)" style="margin-top:0;">
                             </div>
-                        </div>
-                        <div style="margin-top: 8px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;">
-                                <span id="ytUsageText">0m used</span>
-                                <span id="ytLimitText">No limit set</span>
-                            </div>
-                            <div style="height: 6px; background: rgba(15, 23, 42, 0.5); border-radius: 3px; overflow: hidden;">
-                                <div id="ytUsageBar" style="height: 100%; width: 0%; background: #FF4081; border-radius: 3px; transition: width 0.3s;"></div>
-                            </div>
+                            <button id="addCustomTimerBtn" style="margin-top: 0; padding: 9px 18px;">Add Timer</button>
                         </div>
                     </div>
-
-                    <!-- Reddit unproductive timer -->
-                    <div style="background: rgba(15, 23, 42, 0.3); padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1);">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 500;">Reddit</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <input type="number" id="redditUnproductiveLimit" min="-1" placeholder="Min" style="width: 70px; margin-top: 0; padding: 6px 10px;">
-                                <small style="margin-top: 0;">min/day</small>
-                            </div>
-                        </div>
-                        <div style="margin-top: 8px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;">
-                                <span id="redditUsageText">0m used</span>
-                                <span id="redditLimitText">No limit set</span>
-                            </div>
-                            <div style="height: 6px; background: rgba(15, 23, 42, 0.5); border-radius: 3px; overflow: hidden;">
-                                <div id="redditUsageBar" style="height: 100%; width: 0%; background: #42A5F5; border-radius: 3px; transition: width 0.3s;"></div>
-                            </div>
-                        </div>
-                    </div>
+                    <p id="newTimerStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
                 </div>
             </section>
 
@@ -664,6 +639,21 @@
                 <label for="heuristicDominanceRatio">Productive dominance ratio</label>
                 <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
                 <small>A lower score allows more videos through the filter.</small>
+
+                <h4 style="margin-top: 30px;">Content Extraction (Mozilla Readability)</h4>
+                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 12px;">Toggle using Mozilla Readability instead of custom scraping scripts.</p>
+                
+                <div class="toggle-switch-container" id="ytMozillaToggle">
+                    <span class="toggle-label-text">Use Readability for YouTube</span>
+                    <input type="checkbox" id="useMozillaForYoutube">
+                    <div class="slider"></div>
+                </div>
+                <div class="toggle-switch-container" id="redditMozillaToggle">
+                    <span class="toggle-label-text">Use Readability for Reddit</span>
+                    <input type="checkbox" id="useMozillaForReddit">
+                    <div class="slider"></div>
+                </div>
+                <small style="margin-top: 10px; margin-bottom: 14px;">If disabled, the extension will use custom-tailored selectors to scrape YouTube/Reddit metadata. For all other websites, Mozilla Readability is always used.</small>
             </section>
 
             <!-- REPORTS TAB -->

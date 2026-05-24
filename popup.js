@@ -1,199 +1,172 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const tabs = document.querySelectorAll('.nav-tab');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const classificationsList = document.getElementById('classificationsList');
-    const classificationDiv = document.getElementById('currentPageClassification');
-    const blocklistSearchInput = document.getElementById('blocklistSearch');
+    // --- On/Off switch ---
+    const enabledToggle = document.getElementById('extensionEnabled');
+    const enabledLabel  = document.getElementById('enabledLabel');
 
-    let originalProductiveContent = '';
-    let originalUnwantedContent = '';
-    let currentBlocklist = [];
-    let strictUrls = [];
-    let exactUrls = [];
+    chrome.storage.local.get(['extensionEnabled'], ({ extensionEnabled }) => {
+        const enabled = extensionEnabled !== false;
+        enabledToggle.checked = enabled;
+        enabledLabel.textContent = enabled ? 'ON' : 'OFF';
+    });
 
-    // --- Tab Navigation ---
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            tabContents.forEach(content => content.classList.remove('active'));
-            document.getElementById(tab.dataset.tab).classList.add('active');
+    enabledToggle.addEventListener('change', () => {
+        const enabled = enabledToggle.checked;
+        enabledLabel.textContent = enabled ? 'ON' : 'OFF';
+        chrome.storage.local.set({ extensionEnabled: enabled });
+    });
+
+    // --- Comment Mode ---
+    const commentButtons = document.querySelectorAll('.comment-toggle button');
+    let currentCommentMode = 'off';
+
+    chrome.storage.local.get(['commentMode'], ({ commentMode }) => {
+        currentCommentMode = commentMode || 'off';
+        updateCommentUI(currentCommentMode);
+    });
+
+    commentButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentCommentMode = btn.dataset.mode;
+            chrome.storage.local.set({ commentMode: currentCommentMode });
+            updateCommentUI(currentCommentMode);
         });
     });
 
-    // --- Classification Display ---
+    function updateCommentUI(mode) {
+        commentButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    }
+
+    // --- Discovery Card ---
+    const discoveryCard  = document.getElementById('discoveryCard');
+    const discoveryTheme = document.getElementById('discoveryTheme');
+    let pendingDiscovery = null;
+
+    function loadDiscovery() {
+        chrome.storage.local.get(['pendingDiscovery'], ({ pendingDiscovery: pd }) => {
+            if (pd && pd.suggestions && pd.suggestions.length > 0) {
+                pendingDiscovery = pd;
+                const theme = pd.suggestions[0].theme;
+                discoveryTheme.textContent = theme;
+                discoveryCard.style.display = 'block';
+                lucide.createIcons();
+            } else {
+                discoveryCard.style.display = 'none';
+            }
+        });
+    }
+    loadDiscovery();
+
+    document.getElementById('discoveryProductive').addEventListener('click', () => handleDiscovery('productive'));
+    document.getElementById('discoveryUnproductive').addEventListener('click', () => handleDiscovery('unproductive'));
+    document.getElementById('discoveryDismiss').addEventListener('click', () => dismissDiscovery());
+
+    function handleDiscovery(category) {
+        if (!pendingDiscovery) return;
+        const theme = pendingDiscovery.suggestions[0].theme;
+        // Ask background to generate keywords and add as intent
+        chrome.storage.local.get(['groqApiKey', 'intents'], ({ groqApiKey, intents }) => {
+            const existingIntents = intents || [];
+            chrome.runtime.sendMessage({ type: 'generateIntentKeywords', phrase: theme, clarification: null, category }, (response) => {
+                const keywords = response?.keywords || [];
+                const newIntent = {
+                    id: `intent_${Date.now()}`,
+                    original_phrase: theme,
+                    category,
+                    keywords,
+                    clarification: null
+                };
+                existingIntents.push(newIntent);
+                chrome.storage.local.set({ intents: existingIntents });
+            });
+        });
+        dismissDiscovery();
+    }
+
+    function dismissDiscovery() {
+        chrome.storage.local.remove('pendingDiscovery');
+        chrome.action.setBadgeText({ text: '' });
+        discoveryCard.style.display = 'none';
+        pendingDiscovery = null;
+    }
+
+    // --- Current Page Classification ---
+    const classificationDiv = document.getElementById('currentPageClassification');
+
     function renderClassification(result) {
-        if (!classificationDiv) return;
-        if (!result) {
-            classificationDiv.innerHTML = 'No classification available for this page.';
+        if (!result) { classificationDiv.innerHTML = '<span style="color:#64748b;font-style:italic;">No classification available for this page.</span>'; return; }
+        const key = result.key ? `<b>${result.key}</b>` : 'this page';
+        if (result.status === 'classifying') {
+            classificationDiv.innerHTML = `<span style="color:#94a3b8;">Analyzing ${key}...</span>`;
             return;
         }
-
-        let html = '';
-        const key = result.key ? `<em>${result.key}</em>` : 'this page';
-
-        if (result.status === 'classifying') {
-            html = `<b>Status:</b> Analyzing content for ${key}...`;
-        } else {
-            const isEntertainment = result.entertainment;
-            html = `
-                <p style="margin-top:0;"><b>Content:</b> ${key}</p>
-                <p><b>Classification:</b> ${isEntertainment ? '<span style="color:red;">Entertainment</span>' : '<span style="color:green;">Not Entertainment</span>'}</p>
-                <p><b>Reason:</b> ${result.reasoning || 'N/A'}</p>
-            `;
-        }
-        classificationDiv.innerHTML = html;
+        const badge = result.entertainment
+            ? (result.unrestricted
+                ? '<span class="badge badge-unrestricted">Unproductive (Unrestricted)</span>'
+                : '<span class="badge badge-entertainment">Entertainment</span>')
+            : '<span class="badge badge-productive">Productive</span>';
+        classificationDiv.innerHTML = `
+            <div style="margin-bottom:4px;">${key} &nbsp;${badge}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">${result.reasoning || ''}</div>
+        `;
     }
 
-    function getActiveTabClassification() {
+    function loadClassification() {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                const currentTabId = tabs[0].id;
-                chrome.runtime.sendMessage({ type: 'getClassification', tabId: currentTabId }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error(chrome.runtime.lastError.message);
-                        classificationDiv.innerHTML = 'Could not get classification from background script.';
-                    } else {
-                        console.log('Received classification for current page:', response);
-                        renderClassification(response);
-                    }
-                });
-            } else {
-                 classificationDiv.innerHTML = 'Could not identify the active tab.';
-            }
-        });
-    }
-
-    // --- Settings ---
-    const groqApiKeyInput = document.getElementById('groqApiKey');
-    const productiveContentInput = document.getElementById('productiveContent');
-    const unwantedContentInput = document.getElementById('unwantedContent');
-    const saveSettingsButton = document.getElementById('saveSettings');
-    const statusDiv = document.getElementById('status');
-    const openAdvancedSettingsButton = document.getElementById('openAdvancedSettings');
-
-    chrome.storage.local.get(['groqApiKey', 'productiveContent', 'unwantedContent'], (result) => {
-        if (result.groqApiKey) groqApiKeyInput.value = result.groqApiKey;
-        if (result.productiveContent) {
-            productiveContentInput.value = result.productiveContent;
-            originalProductiveContent = result.productiveContent;
-        }
-        if (result.unwantedContent) {
-            unwantedContentInput.value = result.unwantedContent;
-            originalUnwantedContent = result.unwantedContent;
-        }
-    });
-
-    if (saveSettingsButton) {
-        saveSettingsButton.addEventListener('click', () => {
-            const groqApiKey = groqApiKeyInput.value.trim();
-            const productiveContent = productiveContentInput.value.trim();
-            const unwantedContent = unwantedContentInput.value.trim();
-
-            if (!groqApiKey) {
-                statusDiv.textContent = 'GROQ API Key is required.';
-                return;
-            }
-
-            chrome.storage.local.set({
-                groqApiKey,
-                productiveContent,
-                unwantedContent
-            }, () => {
-                statusDiv.textContent = 'Settings saved successfully!';
-                const contentChanged = productiveContent !== originalProductiveContent || unwantedContent !== originalUnwantedContent;
-                if (contentChanged) {
-                    chrome.runtime.sendMessage({ type: 'generateInstructions', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
-                        if (response && response.success) {
-                            console.log('User instructions are being generated in the background.');
-                            originalProductiveContent = productiveContent;
-                            originalUnwantedContent = unwantedContent;
-                        } else {
-                            console.error('Failed to send message to generate instructions.');
-                        }
-                    });
-                }
-                // Always (re)generate keyword maps on Save to ensure freshness
-                chrome.runtime.sendMessage({ type: 'generateKeywordMaps', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
-                    if (response && response.success) {
-                        console.log('Keyword maps are being generated and saved.');
-                    } else {
-                        console.error('Failed to send message to generate keyword maps.');
-                    }
-                });
-                setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+            if (!tabs[0]) return;
+            chrome.runtime.sendMessage({ type: 'getClassification', tabId: tabs[0].id }, (response) => {
+                if (chrome.runtime.lastError) { classificationDiv.textContent = 'Could not fetch classification.'; return; }
+                renderClassification(response);
             });
         });
     }
+    loadClassification();
 
-    if (openAdvancedSettingsButton) {
-        openAdvancedSettingsButton.addEventListener('click', () => {
-            chrome.tabs.create({ url: chrome.runtime.getURL('advanced.html') });
-        });
-    }
+    // --- Blocklist ---
+    let currentBlocklist = [];
+    const blocklistItems  = document.getElementById('blocklistItems');
+    const blocklistSearch = document.getElementById('blocklistSearch');
 
-    // --- Blocklist Display ---
-    function renderBlocklist(list) {
-        if (!classificationsList) return;
-        classificationsList.innerHTML = '';
-        if (!list || list.length === 0) {
-            classificationsList.innerHTML = '<li>Nothing blocked yet.</li>';
+    function renderBlocklist() {
+        const query = (blocklistSearch.value || '').toLowerCase().trim();
+        let list = currentBlocklist.slice().reverse();
+        if (query) list = list.filter(k => k.toLowerCase().includes(query));
+        blocklistItems.innerHTML = '';
+        if (list.length === 0) {
+            blocklistItems.innerHTML = '<li class="empty-state">Nothing blocked yet.</li>';
             return;
         }
         list.forEach(key => {
             const li = document.createElement('li');
             li.textContent = key;
-            const removeButton = document.createElement('button');
-            removeButton.textContent = 'remove';
-            removeButton.style.backgroundColor = 'transparent';
-            removeButton.style.border = 'none';
-            removeButton.style.color = 'white'; 
-            removeButton.style.cursor = 'pointer'; 
-            removeButton.style.marginLeft = '10px';
-            removeButton.addEventListener('click', () => {
-                chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key: key });
-            });
-            li.appendChild(removeButton);
-            classificationsList.appendChild(li);
+            const btn = document.createElement('button');
+            btn.textContent = 'remove';
+            btn.addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key }); });
+            li.appendChild(btn);
+            blocklistItems.appendChild(li);
         });
     }
 
-    function getFilteredBlocklist() {
-        const query = (blocklistSearchInput && blocklistSearchInput.value || '').toLowerCase().trim();
-        let list = Array.isArray(currentBlocklist) ? currentBlocklist.slice().reverse() : [];
-        if (query) {
-            list = list.filter(key => (key || '').toLowerCase().includes(query));
-        }
-        return list;
-    }
-
-    function renderBlocklistFromState() {
-        renderBlocklist(getFilteredBlocklist());
-    }
-
-    chrome.storage.local.get({blocklist: []}, (result) => {
-        currentBlocklist = result.blocklist || [];
-        renderBlocklistFromState();
+    chrome.storage.local.get({ blocklist: [] }, ({ blocklist }) => {
+        currentBlocklist = blocklist;
+        renderBlocklist();
     });
 
-    if (blocklistSearchInput) {
-        blocklistSearchInput.addEventListener('input', () => {
-            renderBlocklistFromState();
-        });
-    }
+    blocklistSearch.addEventListener('input', renderBlocklist);
 
-    // --- Listen for all storage changes ---
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && changes.blocklist) {
-            console.log('Blocklist changed, re-rendering.');
-            currentBlocklist = changes.blocklist.newValue || [];
-            renderBlocklistFromState();
-        }
-        if (namespace === 'session') {
-            getActiveTabClassification(); // Re-check classification if session data changes
-        }
+    // --- Open Settings ---
+    document.getElementById('openOptions').addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
     });
 
-    // --- Initial Load ---
-    getActiveTabClassification();
+    // --- Storage Changes ---
+    chrome.storage.onChanged.addListener((changes, ns) => {
+        if (ns === 'local') {
+            if (changes.blocklist) { currentBlocklist = changes.blocklist.newValue || []; renderBlocklist(); }
+            if (changes.pendingDiscovery) loadDiscovery();
+        }
+        if (ns === 'session') loadClassification();
+    });
+
+    lucide.createIcons();
 });

@@ -1,152 +1,154 @@
-// youtube.js
+(function() {
+    if (typeof window.runYoutubeAnalysis === 'function') {
+        window.runYoutubeAnalysis();
+        return;
+    }
 
-console.log("YouTube content script injected/re-injected. v6");
+    const BLUR_FIRST_ENABLED = false;
+    console.log('YouTube content script initialized.');
 
-// Check if the main function has already been defined in this context.
-if (typeof window.runYoutubeAnalysis !== 'function') {
-    console.log("Defining analysis functions for the first time.");
-
-    // Define constants and helper functions only once.
-    var ANALYSIS_DELAY = 6000; // 6 seconds
-    var RETRY_DELAY = 5000; // 5 seconds
+    var ANALYSIS_DELAY = 6000;
+    var RETRY_DELAY = 5000;
     var MAX_RETRIES = 3;
-    var DESCRIPTION_EXPAND_WAIT = 1000; // Wait 1 second after clicking "Show more"
+    var DESCRIPTION_EXPAND_WAIT = 1000;
+    let lastProcessedUrl = '';
 
-    // Guard to prevent multiple extractions from being triggered for the same URL
-    let lastProcessedUrl = "";
+    // --- Blur overlay ---
+    function showBlurOverlay() {
+        if (!BLUR_FIRST_ENABLED) return null;
+        if (document.getElementById('ext-focus-overlay')) return null;
+        const overlay = document.createElement('div');
+        overlay.id = 'ext-focus-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:opacity 0.3s;';
+        overlay.innerHTML = '<div style="color:#fff;font-size:15px;font-family:sans-serif;text-align:center;"><div style="font-size:28px;margin-bottom:10px;">🔍</div>Analyzing content...</div>';
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function removeBlurOverlay() {
+        const el = document.getElementById('ext-focus-overlay');
+        if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
+    }
+
+    // --- Comment blocker ---
+    function applyCommentMode(commentMode, isEntertainment) {
+        const shouldHide = commentMode === 'all' || (commentMode === 'productive' && !isEntertainment);
+        if (!shouldHide) return;
+        // Try multiple selectors for YouTube comments
+        const selectors = ['#comments', 'ytd-comments'];
+        for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+                el.style.display = 'none';
+                if (!document.getElementById('ext-comments-hidden')) {
+                    const placeholder = document.createElement('div');
+                    placeholder.id = 'ext-comments-hidden';
+                    placeholder.style.cssText = 'padding:32px;color:#aaa;text-align:center;font-style:italic;font-family:Roboto,sans-serif;font-size:14px;';
+                    placeholder.textContent = 'Comments hidden to maintain focus.';
+                    el.insertAdjacentElement('afterend', placeholder);
+                }
+                break;
+            }
+        }
+    }
 
     function sendMessageWithRetry(message, retries = MAX_RETRIES) {
-        console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
         chrome.runtime.sendMessage(message, (response) => {
             if (chrome.runtime.lastError) {
-                const errorMessage = chrome.runtime.lastError.message;
-                if (errorMessage.includes("Receiving end does not exist") && retries > 0) {
-                    console.warn(`Connection to background script failed. Retrying in ${RETRY_DELAY / 1000} seconds...`);
-                    setTimeout(() => { sendMessageWithRetry(message, retries - 1); }, RETRY_DELAY);
+                const err = chrome.runtime.lastError.message;
+                if (err.includes('Receiving end does not exist') && retries > 0) {
+                    setTimeout(() => sendMessageWithRetry(message, retries - 1), RETRY_DELAY);
                 } else {
-                    console.error(`Failed to send message after multiple retries: ${errorMessage}`, message);
+                    console.error('Failed to send message:', err);
                 }
-            } else {
-                console.log("Message sent successfully to background script.");
             }
         });
     }
 
     const extractDescription = async () => {
         let videoDescription = '';
-        
         try {
-            // First, try to find and click the "Show more" button
-            const showMoreButton = document.querySelector('tp-yt-paper-button#expand') || 
-                                   document.querySelector('tp-yt-paper-button#description-inline-expand-button') ||
-                                   document.querySelector('#expand');
-            
+            const showMoreButton = document.querySelector('tp-yt-paper-button#expand') ||
+                document.querySelector('tp-yt-paper-button#description-inline-expand-button') ||
+                document.querySelector('#expand');
             if (showMoreButton && showMoreButton.offsetParent !== null) {
-                console.log("Found 'Show more' button. Clicking to expand description...");
                 showMoreButton.click();
-                
-                // Wait for YouTube to expand the description
                 await new Promise(resolve => setTimeout(resolve, DESCRIPTION_EXPAND_WAIT));
-            } else {
-                console.log("'Show more' button not found or not visible. Description might already be expanded.");
             }
 
-            // Try multiple selectors for the description container
-            const descriptionSelectors = [
-                'ytd-text-inline-expander#description-inline-expander yt-formatted-string.ytd-text-inline-expander',
-                '#description-inline-expander yt-formatted-string',
-                'ytd-text-inline-expander yt-formatted-string',
-                '#description yt-formatted-string',
-                'yt-formatted-string.ytd-text-inline-expander',
-                '#description ytd-text-inline-expander'
-            ];
+            // Primary: .ytAttributedStringHost wraps the visible span.ytAttributedStringLinkInheritColor
+            // which is YouTube's current description container structure
+            const primary = document.querySelector('#description-inline-expander .ytAttributedStringHost') ||
+                document.querySelector('.ytAttributedStringHost');
 
-            for (const selector of descriptionSelectors) {
-                const descriptionElement = document.querySelector(selector);
-                if (descriptionElement && descriptionElement.innerText) {
-                    videoDescription = descriptionElement.innerText.trim();
-                    console.log(`✅ Found description using selector: ${selector}`);
-                    console.log(`✅ Extracted description (${videoDescription.length} chars):`, 
-                                videoDescription.slice(0, 200) + (videoDescription.length > 200 ? '...' : ''));
-                    break;
+            if (primary) {
+                // .innerText preserves visual layout (line breaks) better than .textContent
+                videoDescription = primary.innerText.trim();
+            } else {
+                // Fallback: older YouTube DOM used .yt-core-attributed-string
+                const fallback = document.querySelector('#description-inline-expander .yt-core-attributed-string') ||
+                    document.querySelector('.yt-core-attributed-string');
+                if (fallback) {
+                    videoDescription = fallback.innerText.trim();
+                } else {
+                    console.log('Description container not found — YouTube may have changed its DOM.');
                 }
             }
-
-            if (!videoDescription) {
-                console.warn("⚠️ Could not find video description with any selector.");
-                
-                // Debug: Log available description-related elements
-                const allDescElements = document.querySelectorAll('[id*="description"], [class*="description"]');
-                console.log(`Found ${allDescElements.length} elements with 'description' in id/class:`, 
-                           Array.from(allDescElements).map(el => ({
-                               tag: el.tagName,
-                               id: el.id,
-                               class: el.className,
-                               hasText: !!el.innerText
-                           })));
-            }
-
-        } catch (error) {
-            console.error("❌ Error while extracting description:", error);
-        }
-
-        return videoDescription.slice(0,300);
+        } catch (e) { console.error('Error extracting description:', e); }
+        return videoDescription.slice(0, 300);
     };
 
     const extractData = async () => {
-        if (window.location.href === lastProcessedUrl) {
-            console.log("URL has already been processed recently. Skipping extraction.");
-            return;
-        }
+        if (window.location.href === lastProcessedUrl) { removeBlurOverlay(); return; }
         lastProcessedUrl = window.location.href;
-        console.log("Starting YouTube data extraction...");
 
         try {
-            const titleElement = document.querySelector('h1.ytd-watch-metadata') || 
-                                document.querySelector('h1.title yt-formatted-string') ||
-                                document.querySelector('yt-formatted-string.ytd-watch-metadata');
-            const videoTitle = titleElement ? titleElement.innerText.trim() : '';
-            if (!videoTitle) console.warn("Could not find video title.");
+            const titleEl = document.querySelector('h1.ytd-watch-metadata') ||
+                document.querySelector('h1.title yt-formatted-string') ||
+                document.querySelector('yt-formatted-string.ytd-watch-metadata');
+            const videoTitle = titleEl ? titleEl.innerText.trim() : '';
 
-            const channelElement = document.querySelector('#upload-info #channel-name a') ||
-                                  document.querySelector('ytd-channel-name a') ||
-                                  document.querySelector('#owner a');
-            const channelName = channelElement ? channelElement.innerText.trim() : '';
-            if (!channelName) console.warn("Could not find channel name.");
+            const channelEl = document.querySelector('#upload-info #channel-name a') ||
+                document.querySelector('ytd-channel-name a') ||
+                document.querySelector('#owner a');
+            const channelName = channelEl ? channelEl.innerText.trim() : '';
 
-            // Extract description using the async function
             const videoDescription = await extractDescription();
-            console.log("Final extracted description length:", videoDescription.length);
 
-            if (!channelName && !videoTitle) {
-                console.error("Failed to extract essential data (channel and title). Aborting message send.");
-                return;
-            }
+            if (!channelName && !videoTitle) { console.error('Failed to extract essential data.'); removeBlurOverlay(); return; }
 
-            const data = {
-                source: 'youtube',
-                channel: channelName,
-                title: videoTitle,
-                description: videoDescription,
-                url: window.location.href
-            };
+            const data = { source: 'youtube', channel: channelName, title: videoTitle, description: videoDescription, url: window.location.href };
+            sendMessageWithRetry({ type: 'contentData', data });
 
-            console.log("Successfully extracted data. Preparing to send to background script:", data);
-            sendMessageWithRetry({ type: 'contentData', data: data });
+            // Comment blocker: poll for classification
+            chrome.storage.local.get(['commentMode'], ({ commentMode }) => {
+                if (!commentMode || commentMode === 'off') { removeBlurOverlay(); return; }
+                let polls = 0;
+                const interval = setInterval(() => {
+                    polls++;
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                        if (!tabs[0]) { clearInterval(interval); removeBlurOverlay(); return; }
+                        chrome.runtime.sendMessage({ type: 'getClassification', tabId: tabs[0].id }, (cls) => {
+                            if (cls && cls.entertainment !== undefined) {
+                                clearInterval(interval);
+                                applyCommentMode(commentMode, cls.entertainment);
+                                removeBlurOverlay();
+                            } else if (polls > 20) { clearInterval(interval); removeBlurOverlay(); }
+                        });
+                    });
+                }, 1000);
+            });
 
-        } catch (error) {
-            console.error('An error occurred during YouTube data extraction:', error);
-            sendMessageWithRetry({ type: 'error', message: 'Could not extract data from YouTube page.' });
+        } catch (e) {
+            console.error('Error during YouTube data extraction:', e);
+            removeBlurOverlay();
         }
     };
 
-    // Define the main execution function and attach it to the window object.
     window.runYoutubeAnalysis = () => {
-        console.log(`Analysis triggered. Waiting ${ANALYSIS_DELAY / 1000} seconds to extract data.`);
+        showBlurOverlay();
         setTimeout(extractData, ANALYSIS_DELAY);
     };
-}
 
-// Always call the main function when the script is injected.
-console.log("Invoking analysis trigger.");
-window.runYoutubeAnalysis();
+    window.runYoutubeAnalysis();
+})();

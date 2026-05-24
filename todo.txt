@@ -19,3 +19,25 @@ need to consider for content timer -
 only what is unproductive explicitly
 OR
 generalised unproductive + 
+
+10.5
+no save button for intents, not sure if each intent is being sent out as an individual prompt
+icons not visible, they are supposed to already be in white
+doubts about homepage url
+what is advanced mode
+
+
+11.5
+questions are really bad
+
+11.5
+edge case:
+i type genshin in unproductive. 
+in the follow up, i realise only genshin tutorials should be in productive,
+that should be then be autonomously added in the productive category
+
+need to fix the fact that everything is requiring a follow up
+no need to generate so many keywords for everything
+
+for productive category: getting qs meeant for unproductive:
+"Do you want to block all content about AI, or just specific things like AI-generated music or AI-related news?"

@@ -4,8 +4,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Elements
     const modeRadios = document.querySelectorAll('input[name="mode"]');
     const modeDescription = document.getElementById('modeDescription');
-    const youtubeLimitInput = document.getElementById('youtubeLimitMinutes');
-    const redditLimitInput = document.getElementById('redditLimitMinutes');
+    const homepageListContainer = document.getElementById('homepageListContainer');
+    const newHomepageDomainInput = document.getElementById('newHomepageDomain');
+    const newHomepageLimitInput = document.getElementById('newHomepageLimit');
+    const addHomepageBtn = document.getElementById('addHomepageBtn');
+    const newHomepageStatusEl = document.getElementById('newHomepageStatus');
     const heuristicDominanceRatioInput = document.getElementById('heuristicDominanceRatio');
     const actionRadios = document.querySelectorAll('input[name="blockAction"]');
     const strictUrlInput = document.getElementById('strictUrlInput');
@@ -17,14 +20,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const exactUrlList = document.getElementById('exactUrlList');
 
     // Content Timer elements
-    const ytUnproductiveLimitInput = document.getElementById('ytUnproductiveLimit');
-    const redditUnproductiveLimitInput = document.getElementById('redditUnproductiveLimit');
-    const ytUsageText = document.getElementById('ytUsageText');
-    const ytLimitText = document.getElementById('ytLimitText');
-    const ytUsageBar = document.getElementById('ytUsageBar');
-    const redditUsageText = document.getElementById('redditUsageText');
-    const redditLimitText = document.getElementById('redditLimitText');
-    const redditUsageBar = document.getElementById('redditUsageBar');
+    const listContainer = document.getElementById('timersListContainer');
+    const newNameInput = document.getElementById('newTimerName');
+    const newDomainsInput = document.getElementById('newTimerDomains');
+    const newExclusionsInput = document.getElementById('newTimerExclusions');
+    const newLimitInput = document.getElementById('newTimerLimit');
+    const addBtn = document.getElementById('addCustomTimerBtn');
+    const statusEl = document.getElementById('newTimerStatus');
+
+    const useMozillaForYoutubeInput = document.getElementById('useMozillaForYoutube');
+    const useMozillaForRedditInput = document.getElementById('useMozillaForReddit');
 
     // Tab Logic
     const menuItems = document.querySelectorAll('.menu-item');
@@ -45,21 +50,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Data State
+    let homepageBlocklist = [];
     let strictUrlBlocklist = [];
     let exactUrlBlocklist = [];
-    let youtubeLimit = { limitMinutes: 0, secondsUsedToday: 0 };
-    let redditLimit = { limitMinutes: 0, secondsUsedToday: 0 };
 
     // Initial Load
     chrome.storage.local.get([
         'blockingMode',
-        'youtubeLimit',
-        'redditLimit',
+        'homepageBlocklist',
         'strictUrlBlocklist',
         'exactUrlBlocklist',
         'heuristicDominanceRatio',
         'blockAction',
-        'unproductiveTimers'
+        'unproductiveTimers',
+        'useMozillaForYoutube',
+        'useMozillaForReddit'
     ], (result) => {
         // Mode
         const rawMode = result.blockingMode;
@@ -75,11 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
             actionRadios.forEach(radio => radio.checked = (radio.value === blockAction));
         }
 
-        // Limits
-        youtubeLimit = result.youtubeLimit || { limitMinutes: 0, secondsUsedToday: 0 };
-        redditLimit = result.redditLimit || { limitMinutes: 0, secondsUsedToday: 0 };
-        if (youtubeLimitInput) youtubeLimitInput.value = youtubeLimit.limitMinutes;
-        if (redditLimitInput) redditLimitInput.value = redditLimit.limitMinutes;
+        // Homepage Limits
+        homepageBlocklist = result.homepageBlocklist || [
+            { domain: 'youtube.com', limitMinutes: -1, secondsUsedToday: 0 },
+            { domain: 'reddit.com', limitMinutes: -1, secondsUsedToday: 0 }
+        ];
+        renderHomepageListUI(homepageBlocklist);
 
         // Ratio
         const ratio = typeof result.heuristicDominanceRatio === 'number' ? result.heuristicDominanceRatio : 2.0;
@@ -99,16 +105,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Unproductive timers
         const timers = result.unproductiveTimers || {
-            youtube: { limitMinutes: -1, secondsUsedToday: 0 },
-            reddit: { limitMinutes: -1, secondsUsedToday: 0 }
+            youtube: { id: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be'], limitMinutes: 0, secondsUsedToday: 0 },
+            reddit: { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], limitMinutes: 0, secondsUsedToday: 0 },
+            web: { id: 'web', name: 'Other Websites', domains: ['*'], limitMinutes: 0, secondsUsedToday: 0 }
         };
-        if (ytUnproductiveLimitInput) {
-            ytUnproductiveLimitInput.value = timers.youtube.limitMinutes >= 0 ? timers.youtube.limitMinutes : '';
+        renderTimerListUI(timers);
+
+        // Readability options
+        if (useMozillaForYoutubeInput) {
+            useMozillaForYoutubeInput.checked = !!result.useMozillaForYoutube;
         }
-        if (redditUnproductiveLimitInput) {
-            redditUnproductiveLimitInput.value = timers.reddit.limitMinutes >= 0 ? timers.reddit.limitMinutes : '';
+        if (useMozillaForRedditInput) {
+            useMozillaForRedditInput.checked = !!result.useMozillaForReddit;
         }
-        updateTimerUsageUI(timers);
     });
 
     // UI Helpers
@@ -142,43 +151,269 @@ document.addEventListener('DOMContentLoaded', () => {
         return m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
 
-    function updateTimerUsageUI(timers) {
-        if (!timers) return;
-        const yt = timers.youtube || { limitMinutes: -1, secondsUsedToday: 0 };
-        const rd = timers.reddit || { limitMinutes: -1, secondsUsedToday: 0 };
+    function renderHomepageListUI(list) {
+        homepageBlocklist = list;
+        if (!homepageListContainer) return;
+        homepageListContainer.innerHTML = '';
 
-        // YouTube
-        if (ytUsageText) ytUsageText.textContent = `${formatMinSec(yt.secondsUsedToday)} used`;
-        if (ytLimitText) ytLimitText.textContent = yt.limitMinutes >= 0 ? `${yt.limitMinutes}m limit` : 'No limit (instant block)';
-        if (ytUsageBar) {
-            const pct = yt.limitMinutes > 0 ? Math.min((yt.secondsUsedToday / (yt.limitMinutes * 60)) * 100, 100) : 0;
-            ytUsageBar.style.width = `${pct}%`;
-            ytUsageBar.style.background = pct >= 100 ? '#EF5350' : '#FF4081';
-        }
+        list.forEach((item) => {
+            const div = document.createElement('div');
+            div.style.cssText = 'background: rgba(15, 23, 42, 0.3); padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1); margin-bottom: 12px;';
 
-        // Reddit
-        if (redditUsageText) redditUsageText.textContent = `${formatMinSec(rd.secondsUsedToday)} used`;
-        if (redditLimitText) redditLimitText.textContent = rd.limitMinutes >= 0 ? `${rd.limitMinutes}m limit` : 'No limit (instant block)';
-        if (redditUsageBar) {
-            const pct = rd.limitMinutes > 0 ? Math.min((rd.secondsUsedToday / (rd.limitMinutes * 60)) * 100, 100) : 0;
-            redditUsageBar.style.width = `${pct}%`;
-            redditUsageBar.style.background = pct >= 100 ? '#EF5350' : '#42A5F5';
-        }
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+            const leftSide = document.createElement('div');
+            leftSide.style.cssText = 'display: flex; flex-direction: column;';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = item.domain;
+            nameSpan.style.cssText = 'font-weight: 500; color: #fff;';
+            leftSide.appendChild(nameSpan);
+
+            const rightSide = document.createElement('div');
+            rightSide.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+            const limitInput = document.createElement('input');
+            limitInput.type = 'number';
+            limitInput.min = '-1';
+            limitInput.value = item.limitMinutes >= 0 ? item.limitMinutes : '';
+            limitInput.placeholder = 'Min';
+            limitInput.style.cssText = 'width: 70px; margin-top: 0; padding: 6px 10px;';
+
+            limitInput.addEventListener('change', () => {
+                const val = parseInt(limitInput.value);
+                item.limitMinutes = isNaN(val) ? -1 : val;
+                chrome.storage.local.set({ homepageBlocklist }, () => {
+                    renderHomepageListUI(homepageBlocklist);
+                });
+            });
+
+            rightSide.appendChild(limitInput);
+
+            const minLabel = document.createElement('small');
+            minLabel.textContent = 'min/day';
+            minLabel.style.marginTop = '0';
+            rightSide.appendChild(minLabel);
+
+            const isDefault = ['youtube.com', 'reddit.com'].includes(item.domain.toLowerCase());
+            if (!isDefault) {
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = 'Remove';
+                removeBtn.style.cssText = 'margin-top: 0; margin-left: 8px; padding: 4px 8px; font-size: 11px; background-color: transparent; color: #94a3b8; box-shadow: none; text-transform: lowercase;';
+                applyRemoveButtonStyles(removeBtn);
+                removeBtn.addEventListener('click', () => {
+                    homepageBlocklist = homepageBlocklist.filter(h => h.domain !== item.domain);
+                    chrome.storage.local.set({ homepageBlocklist }, () => {
+                        renderHomepageListUI(homepageBlocklist);
+                    });
+                });
+                rightSide.appendChild(removeBtn);
+            }
+
+            headerRow.appendChild(leftSide);
+            headerRow.appendChild(rightSide);
+            div.appendChild(headerRow);
+
+            const usageRow = document.createElement('div');
+            usageRow.style.cssText = 'margin-top: 8px;';
+
+            const usageTextDiv = document.createElement('div');
+            usageTextDiv.style.cssText = 'display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;';
+
+            const usedText = document.createElement('span');
+            usedText.textContent = `${formatMinSec(item.secondsUsedToday)} used`;
+
+            const limitText = document.createElement('span');
+            limitText.textContent = item.limitMinutes < 0 ? 'No limit set' : item.limitMinutes === 0 ? 'Always block' : `${item.limitMinutes}m/day limit`;
+
+            usageTextDiv.appendChild(usedText);
+            usageTextDiv.appendChild(limitText);
+            usageRow.appendChild(usageTextDiv);
+
+            const usageTrack = document.createElement('div');
+            usageTrack.style.cssText = 'height: 6px; background: rgba(15, 23, 42, 0.5); border-radius: 3px; overflow: hidden;';
+
+            const usageFill = document.createElement('div');
+            usageFill.style.cssText = 'height: 100%; width: 0%; border-radius: 3px; transition: width 0.3s;';
+
+            const pct = item.limitMinutes > 0 ? Math.min((item.secondsUsedToday / (item.limitMinutes * 60)) * 100, 100) : 0;
+            usageFill.style.width = `${pct}%`;
+
+            let color = '#66BB6A'; // Green for custom
+            if (item.domain === 'youtube.com') color = '#FF4081';
+            else if (item.domain === 'reddit.com') color = '#42A5F5';
+
+            usageFill.style.background = pct >= 100 ? '#EF5350' : color;
+
+            usageTrack.appendChild(usageFill);
+            usageRow.appendChild(usageTrack);
+            div.appendChild(usageRow);
+
+            homepageListContainer.appendChild(div);
+        });
     }
 
-    function saveUnproductiveTimers() {
-        chrome.storage.local.get(['unproductiveTimers'], (res) => {
-            const timers = res.unproductiveTimers || {
-                youtube: { limitMinutes: -1, secondsUsedToday: 0 },
-                reddit: { limitMinutes: -1, secondsUsedToday: 0 }
-            };
-            const ytVal = ytUnproductiveLimitInput ? parseInt(ytUnproductiveLimitInput.value) : NaN;
-            const rdVal = redditUnproductiveLimitInput ? parseInt(redditUnproductiveLimitInput.value) : NaN;
-            timers.youtube.limitMinutes = isNaN(ytVal) ? -1 : ytVal;
-            timers.reddit.limitMinutes = isNaN(rdVal) ? -1 : rdVal;
-            chrome.storage.local.set({ unproductiveTimers: timers });
-            updateTimerUsageUI(timers);
+    function renderTimerListUI(timers) {
+        if (!listContainer) return;
+        listContainer.innerHTML = '';
+
+        // Ensure overall exists
+        if (!timers.overall) {
+            timers.overall = { id: 'overall', name: 'Overall Limit', domains: [], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0, isOverall: true };
+        }
+
+        const keys = Object.keys(timers);
+        const orderedKeys = [];
+        if (keys.includes('overall')) orderedKeys.push('overall');
+        if (keys.includes('youtube')) orderedKeys.push('youtube');
+        if (keys.includes('reddit')) orderedKeys.push('reddit');
+        keys.forEach(k => {
+            if (k !== 'overall' && k !== 'youtube' && k !== 'reddit' && k !== 'web') orderedKeys.push(k);
         });
+        if (keys.includes('web')) orderedKeys.push('web');
+
+        orderedKeys.forEach(key => {
+            const timer = timers[key];
+            if (!timer) return;
+
+            const div = document.createElement('div');
+            div.style.cssText = 'background: rgba(15, 23, 42, 0.3); padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.1); margin-bottom: 12px;';
+
+            const isFixed = ['youtube', 'reddit', 'web', 'overall'].includes(timer.id);
+
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+            const leftSide = document.createElement('div');
+            leftSide.style.cssText = 'display: flex; flex-direction: column;';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = timer.name;
+            nameSpan.style.cssText = 'font-weight: 500; color: #fff;';
+            leftSide.appendChild(nameSpan);
+
+            if (timer.id === 'overall') {
+                const domainsSpan = document.createElement('small');
+                domainsSpan.textContent = 'Sum of all website timers';
+                domainsSpan.style.cssText = 'color:#FF4081; font-size:11px; margin-top:2px; display:block; font-weight: 500;';
+                leftSide.appendChild(domainsSpan);
+            } else if (!isFixed && timer.domains) {
+                const domainsSpan = document.createElement('small');
+                domainsSpan.textContent = `Domains: ${timer.domains.join(', ')}`;
+                domainsSpan.style.cssText = 'color: #94a3b8; font-size: 11px; margin-top: 2px; display: block;';
+                leftSide.appendChild(domainsSpan);
+            } else if (timer.id === 'web') {
+                const domainsSpan = document.createElement('small');
+                domainsSpan.textContent = 'All other websites';
+                domainsSpan.style.cssText = 'color: #64748b; font-size: 11px; margin-top: 2px; display: block;';
+                leftSide.appendChild(domainsSpan);
+            }
+
+            if (timer.id !== 'overall' && Array.isArray(timer.excludedDomains) && timer.excludedDomains.length > 0) {
+                const exclusionsSpan = document.createElement('small');
+                exclusionsSpan.textContent = `Excluded: ${timer.excludedDomains.join(', ')}`;
+                exclusionsSpan.style.cssText = 'color:#EF5350; font-size:10px; margin-top:1px; display:block;';
+                leftSide.appendChild(exclusionsSpan);
+            }
+
+            const rightSide = document.createElement('div');
+            rightSide.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+            const limitInput = document.createElement('input');
+            limitInput.type = 'number';
+            limitInput.min = '-1';
+            limitInput.value = timer.limitMinutes >= 0 ? timer.limitMinutes : '';
+            limitInput.placeholder = 'Min';
+            limitInput.style.cssText = 'width: 70px; margin-top: 0; padding: 6px 10px;';
+
+            limitInput.addEventListener('change', () => {
+                const val = parseInt(limitInput.value);
+                saveTimerLimit(timer.id, isNaN(val) ? -1 : val);
+            });
+
+            rightSide.appendChild(limitInput);
+
+            const minLabel = document.createElement('small');
+            minLabel.textContent = 'min/day';
+            minLabel.style.marginTop = '0';
+            rightSide.appendChild(minLabel);
+
+            if (!isFixed) {
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = 'Remove';
+                removeBtn.style.cssText = 'margin-top: 0; margin-left: 8px; padding: 4px 8px; font-size: 11px; background-color: transparent; color: #94a3b8; box-shadow: none; text-transform: lowercase;';
+                applyRemoveButtonStyles(removeBtn);
+                removeBtn.addEventListener('click', () => removeTimer(timer.id));
+                rightSide.appendChild(removeBtn);
+            }
+
+            headerRow.appendChild(leftSide);
+            headerRow.appendChild(rightSide);
+            div.appendChild(headerRow);
+
+            const usageRow = document.createElement('div');
+            usageRow.style.cssText = 'margin-top: 8px;';
+
+            const usageTextDiv = document.createElement('div');
+            usageTextDiv.style.cssText = 'display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;';
+
+            const usedText = document.createElement('span');
+            usedText.textContent = `${formatMinSec(timer.secondsUsedToday)} used`;
+
+            const limitText = document.createElement('span');
+            limitText.textContent = timer.limitMinutes < 0 ? 'No limit set' : timer.limitMinutes === 0 ? 'Always block' : `${timer.limitMinutes}m/day limit`;
+
+            usageTextDiv.appendChild(usedText);
+            usageTextDiv.appendChild(limitText);
+            usageRow.appendChild(usageTextDiv);
+
+            const usageTrack = document.createElement('div');
+            usageTrack.style.cssText = 'height: 6px; background: rgba(15, 23, 42, 0.5); border-radius: 3px; overflow: hidden;';
+
+            const usageFill = document.createElement('div');
+            usageFill.style.cssText = 'height: 100%; width: 0%; border-radius: 3px; transition: width 0.3s;';
+
+            const pct = timer.limitMinutes > 0 ? Math.min((timer.secondsUsedToday / (timer.limitMinutes * 60)) * 100, 100) : 0;
+            usageFill.style.width = `${pct}%`;
+
+            let color = '#66BB6A'; // Green for custom
+            if (timer.id === 'youtube') color = '#FF4081';
+            else if (timer.id === 'reddit') color = '#42A5F5';
+            else if (timer.id === 'overall') color = '#AB47BC'; // Purple for overall
+
+            usageFill.style.background = pct >= 100 ? '#EF5350' : color;
+
+            usageTrack.appendChild(usageFill);
+            usageRow.appendChild(usageTrack);
+            div.appendChild(usageRow);
+
+            listContainer.appendChild(div);
+        });
+    }
+
+    function saveTimerLimit(timerId, limitMinutes) {
+        chrome.storage.local.get(['unproductiveTimers'], (res) => {
+            const timers = res.unproductiveTimers || {};
+            if (timers[timerId]) {
+                timers[timerId].limitMinutes = limitMinutes;
+                chrome.storage.local.set({ unproductiveTimers: timers }, () => {
+                    renderTimerListUI(timers);
+                });
+            }
+        });
+    }
+
+    function removeTimer(timerId) {
+        if (confirm('Are you sure you want to remove this timer?')) {
+            chrome.storage.local.get(['unproductiveTimers'], (res) => {
+                const timers = res.unproductiveTimers || {};
+                delete timers[timerId];
+                chrome.storage.local.set({ unproductiveTimers: timers }, () => {
+                    renderTimerListUI(timers);
+                });
+            });
+        }
     }
 
     // Save Logic
@@ -192,15 +427,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedActionRadio = Array.from(actionRadios).find(r => r.checked);
         const blockAction = selectedActionRadio ? selectedActionRadio.value : (blockingMode === 'STRICT' ? 'RICKROLL' : 'GREYSCALE');
 
-        youtubeLimit.limitMinutes = parseInt(youtubeLimitInput.value) || 0;
-        redditLimit.limitMinutes = parseInt(redditLimitInput.value) || 0;
+        const useMozillaForYoutube = useMozillaForYoutubeInput ? useMozillaForYoutubeInput.checked : false;
+        const useMozillaForReddit = useMozillaForRedditInput ? useMozillaForRedditInput.checked : false;
 
         chrome.storage.local.set({
             blockingMode,
             heuristicDominanceRatio: ratio,
             blockAction,
-            youtubeLimit,
-            redditLimit
+            useMozillaForYoutube,
+            useMozillaForReddit
         });
     }
 
@@ -219,12 +454,107 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     actionRadios.forEach(radio => radio.addEventListener('change', saveAllSettings));
-    [youtubeLimitInput, redditLimitInput, heuristicDominanceRatioInput].forEach(el => {
+    [heuristicDominanceRatioInput].forEach(el => {
         if (el) el.addEventListener('change', saveAllSettings);
     });
-    [ytUnproductiveLimitInput, redditUnproductiveLimitInput].forEach(el => {
-        if (el) el.addEventListener('change', saveUnproductiveTimers);
+    [useMozillaForYoutubeInput, useMozillaForRedditInput].forEach(el => {
+        if (el) el.addEventListener('change', saveAllSettings);
     });
+
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            const name = newNameInput ? newNameInput.value.trim() : '';
+            const domainsStr = newDomainsInput ? newDomainsInput.value.trim() : '';
+            const exclusionsStr = newExclusionsInput ? newExclusionsInput.value.trim() : '';
+            const limitVal = newLimitInput ? parseInt(newLimitInput.value) : NaN;
+
+            if (!name || !domainsStr) return;
+
+            const domains = domainsStr.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+            if (domains.length === 0) return;
+
+            const excludedDomains = exclusionsStr.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+
+            const limitMinutes = isNaN(limitVal) ? -1 : limitVal;
+
+            chrome.storage.local.get(['unproductiveTimers'], (res) => {
+                const timers = res.unproductiveTimers || {
+                    overall: { id: 'overall', name: 'Overall Limit', domains: [], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0, isOverall: true },
+                    youtube: { id: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+                    reddit: { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+                    web: { id: 'web', name: 'Other Websites', domains: ['*'], excludedDomains: ['youtube.com', 'youtu.be', 'reddit.com'], limitMinutes: -1, secondsUsedToday: 0 }
+                };
+
+                const newId = 'timer_' + Date.now();
+                timers[newId] = {
+                    id: newId,
+                    name: name,
+                    domains: domains,
+                    excludedDomains: excludedDomains,
+                    limitMinutes: limitMinutes,
+                    secondsUsedToday: 0
+                };
+
+                chrome.storage.local.set({ unproductiveTimers: timers }, () => {
+                    if (newNameInput) newNameInput.value = '';
+                    if (newDomainsInput) newDomainsInput.value = '';
+                    if (newExclusionsInput) newExclusionsInput.value = '';
+                    if (newLimitInput) newLimitInput.value = '';
+                    if (statusEl) {
+                        statusEl.textContent = 'Timer added successfully!';
+                        statusEl.style.display = 'block';
+                        setTimeout(() => statusEl.style.display = 'none', 3000);
+                    }
+                    renderTimerListUI(timers);
+                });
+            });
+        });
+    }
+
+    // Add Homepage button handler
+    if (addHomepageBtn) {
+        addHomepageBtn.addEventListener('click', () => {
+            const domain = newHomepageDomainInput ? newHomepageDomainInput.value.trim().toLowerCase() : '';
+            const limitVal = newHomepageLimitInput ? parseInt(newHomepageLimitInput.value) : NaN;
+
+            if (!domain) return;
+
+            let cleanDomain = domain;
+            try {
+                if (domain.startsWith('http://') || domain.startsWith('https://')) {
+                    cleanDomain = new URL(domain).hostname;
+                } else if (domain.includes('/')) {
+                    cleanDomain = domain.split('/')[0];
+                }
+            } catch(e) {}
+            cleanDomain = cleanDomain.replace(/^www\./, '');
+
+            if (!cleanDomain) return;
+
+            const limit = isNaN(limitVal) ? -1 : limitVal;
+
+            if (homepageBlocklist.some(h => h.domain === cleanDomain)) {
+                return;
+            }
+
+            homepageBlocklist.push({
+                domain: cleanDomain,
+                limitMinutes: limit,
+                secondsUsedToday: 0
+            });
+
+            chrome.storage.local.set({ homepageBlocklist }, () => {
+                if (newHomepageDomainInput) newHomepageDomainInput.value = '';
+                if (newHomepageLimitInput) newHomepageLimitInput.value = '';
+                if (newHomepageStatusEl) {
+                    newHomepageStatusEl.textContent = 'Homepage added successfully!';
+                    newHomepageStatusEl.style.display = 'block';
+                    setTimeout(() => newHomepageStatusEl.style.display = 'none', 3000);
+                }
+                renderHomepageListUI(homepageBlocklist);
+            });
+        });
+    }
 
     // Rendering
     function renderStrictUrls(list) {
@@ -268,7 +598,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const totalSeconds = item.limitMinutes * 60;
                 const remainingSeconds = Math.max(0, totalSeconds - item.secondsUsedToday);
                 const percentage = (remainingSeconds / totalSeconds) * 100;
-                const dashOffset = 100 - (percentage); // Simplified for 100 circumference
+                const circum = 100.53;
+                const dashOffset = circum - (percentage / 100) * circum;
 
                 const timerContainer = document.createElement('div');
                 timerContainer.className = 'timer-container';
@@ -278,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="36" height="36" viewBox="0 0 36 36">
                             <circle class="timer-circle-bg" cx="18" cy="18" r="16"></circle>
                             <circle class="timer-circle-progress" cx="18" cy="18" r="16" 
-                                style="stroke-dasharray: 100; stroke-dashoffset: ${dashOffset};"></circle>
+                                style="stroke-dasharray: 100.53; stroke-dashoffset: ${dashOffset.toFixed(2)};"></circle>
                         </svg>
                     </div>
                     <div class="timer-info">
@@ -532,13 +863,9 @@ document.addEventListener('DOMContentLoaded', () => {
             exactUrlBlocklist = changes.exactUrlBlocklist.newValue || [];
             renderExactUrls(exactUrlBlocklist);
         }
-        if (changes.youtubeLimit) {
-            youtubeLimit = changes.youtubeLimit.newValue || { limitMinutes: 0, secondsUsedToday: 0 };
-            if (youtubeLimitInput) youtubeLimitInput.value = youtubeLimit.limitMinutes;
-        }
-        if (changes.redditLimit) {
-            redditLimit = changes.redditLimit.newValue || { limitMinutes: 0, secondsUsedToday: 0 };
-            if (redditLimitInput) redditLimitInput.value = redditLimit.limitMinutes;
+        if (changes.homepageBlocklist) {
+            homepageBlocklist = changes.homepageBlocklist.newValue || [];
+            renderHomepageListUI(homepageBlocklist);
         }
         if (changes.blockingMode) {
             const mode = changes.blockingMode.newValue;
@@ -553,7 +880,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderReports();
         }
         if (changes.unproductiveTimers) {
-            updateTimerUsageUI(changes.unproductiveTimers.newValue);
+            renderTimerListUI(changes.unproductiveTimers.newValue || {});
+        }
+        if (changes.useMozillaForYoutube) {
+            if (useMozillaForYoutubeInput) useMozillaForYoutubeInput.checked = !!changes.useMozillaForYoutube.newValue;
+        }
+        if (changes.useMozillaForReddit) {
+            if (useMozillaForRedditInput) useMozillaForRedditInput.checked = !!changes.useMozillaForReddit.newValue;
         }
     });
 });

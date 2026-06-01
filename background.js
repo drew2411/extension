@@ -275,7 +275,15 @@ async function recordUnproductiveTime(source, seconds, tabId) {
     
     // Check overall timer limit
     const overallLimit = timers.overall.limitMinutes;
-    await checkAndEnforceLimit(tabId, 'overall', overallLimit, timers.overall.secondsUsedToday, "Overall Content Limit");
+    const blocked = await checkAndEnforceLimit(tabId, 'overall', overallLimit, timers.overall.secondsUsedToday, "Overall Content Limit");
+    
+    if (!blocked && tabId) {
+        chrome.tabs.get(tabId, (tab) => {
+            if (!chrome.runtime.lastError && tab && tab.url) {
+                updateWarningBadge(tabId, tab.url);
+            }
+        });
+    }
 }
 
 async function recordTime(domain, seconds, url, tabId) {
@@ -335,6 +343,9 @@ async function recordTime(domain, seconds, url, tabId) {
     }
 
     await chrome.storage.local.set(storageUpdate);
+    if (tabId && url) {
+        await updateWarningBadge(tabId, url);
+    }
 }
 
 // --- Tab / Window Events ---
@@ -346,6 +357,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         if (tab && tab.url) {
             await startSession(tab.id, tab.url);
             await maybeResumeUnproductiveTimer(tab.id, tab.url);
+            await updateWarningBadge(tab.id, tab.url);
         }
     } catch (e) { }
 });
@@ -360,6 +372,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
             if (tab && tab.url) {
                 await startSession(tab.id, tab.url);
                 await maybeResumeUnproductiveTimer(tab.id, tab.url);
+                await updateWarningBadge(tab.id, tab.url);
             }
         } catch (e) { }
     }
@@ -396,6 +409,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // Clean stale rickroll guards
     const now = Date.now();
     for (const [id, ts] of recentlyBlockedTabs) { if (now - ts > 10000) recentlyBlockedTabs.delete(id); }
+
+    // Update warning badge for active tab
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url) {
+            await updateWarningBadge(tab.id, tab.url);
+        }
+    } catch (e) { }
 });
 
 async function maybeResumeUnproductiveTimer(tabId, url) {
@@ -511,6 +532,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete' || !tab.url || tab.url === rickrollUrl) return;
 
     await evaluateTabRules(tabId, tab);
+    await updateWarningBadge(tabId, tab.url);
 });
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
@@ -523,6 +545,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
         await startSession(details.tabId, details.url);
     }
     await evaluateTabRules(details.tabId, { url: details.url });
+    await updateWarningBadge(details.tabId, details.url);
 });
 
 // --- Messages ---
@@ -827,6 +850,8 @@ async function analyzeWithKeywords(data, intents) {
     }
 
     return { decision: 'unknown', reason: 'Inconclusive ratio' };
+}
+
 // --- Storage Changes Listener for Automatic Blocklist / Timer Addition ---
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
     if (namespace !== 'local') return;
@@ -901,6 +926,86 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
         }
     }
 });
+
+async function updateWarningBadge(tabId, url) {
+    if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url === rickrollUrl) {
+        chrome.action.setBadgeText({ text: "", tabId });
+        return;
+    }
+    
+    const domain = getDomain(url);
+    if (!domain) {
+        chrome.action.setBadgeText({ text: "", tabId });
+        return;
+    }
+    
+    try {
+        const { domainClassifications, homepageBlocklist, strictUrlBlocklist, unproductiveTimers } = await chrome.storage.local.get([
+            'domainClassifications', 'homepageBlocklist', 'strictUrlBlocklist', 'unproductiveTimers'
+        ]);
+        
+        const matched = [];
+        
+        // 1. Strict URL
+        if (Array.isArray(strictUrlBlocklist)) {
+            const strict = strictUrlBlocklist.find(item => urlMatchesStrictRule(url, item.url) && item.limitMinutes >= 0);
+            if (strict) matched.push(strict);
+        }
+        
+        // 2. Homepage
+        if (Array.isArray(homepageBlocklist)) {
+            const home = homepageBlocklist.find(item => urlMatchesHomepageRule(url, item.domain) && item.limitMinutes >= 0);
+            if (home) matched.push({ limitMinutes: home.limitMinutes, secondsUsedToday: home.secondsUsedToday });
+        }
+        
+        // 3. Content Timers
+        const classification = getDomainClassification(url, domainClassifications);
+        let contentTimerApplies = false;
+        if (classification === 'unproductive') {
+            contentTimerApplies = true;
+        } else {
+            const sessionData = await chrome.storage.session.get(tabId.toString());
+            const cls = sessionData[tabId];
+            if (cls && cls.entertainment) {
+                contentTimerApplies = true;
+            }
+        }
+        
+        if (contentTimerApplies && unproductiveTimers) {
+            const timerId = findTimerForDomain(domain, unproductiveTimers);
+            if (timerId && unproductiveTimers[timerId] && unproductiveTimers[timerId].limitMinutes >= 0) {
+                matched.push(unproductiveTimers[timerId]);
+            }
+            if (unproductiveTimers.overall && unproductiveTimers.overall.limitMinutes >= 0) {
+                matched.push(unproductiveTimers.overall);
+            }
+        }
+        
+        // Find if any timer is getting close (<= 2 minutes remaining)
+        let minRemainingSecs = Infinity;
+        for (const timer of matched) {
+            const total = timer.limitMinutes * 60;
+            const remaining = total - timer.secondsUsedToday;
+            if (remaining < minRemainingSecs) {
+                minRemainingSecs = remaining;
+            }
+        }
+        
+        if (minRemainingSecs <= 120 && minRemainingSecs > 0) {
+            const mins = Math.ceil(minRemainingSecs / 60);
+            chrome.action.setBadgeText({ text: `${mins}m`, tabId });
+            chrome.action.setBadgeBackgroundColor({ color: '#EF5350', tabId });
+        } else {
+            // Check if there is pendingDiscovery badge, otherwise clear
+            const { pendingDiscovery } = await chrome.storage.local.get('pendingDiscovery');
+            if (!pendingDiscovery) {
+                chrome.action.setBadgeText({ text: "", tabId });
+            }
+        }
+    } catch (e) {
+        // Tab might be closed or invalid
+    }
+}
 
 // --- Default Storage Initialization ---
 chrome.runtime.onInstalled.addListener(async () => {

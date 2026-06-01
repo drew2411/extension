@@ -157,6 +157,59 @@
         .btn-productive .lucide, .btn-unproductive .lucide { color: #fff; }
         .btn-dismiss .lucide { color: #94a3b8; }
         .discovery-card h4 .lucide { color: #FF4081; }
+
+        /* Timer styles */
+        .timer-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.08);
+            margin-top: 6px;
+        }
+        .timer-circle-box {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+        }
+        .timer-circle-box svg {
+            transform: rotate(-90deg);
+        }
+        .timer-circle-bg {
+            fill: none;
+            stroke: rgba(148, 163, 184, 0.1);
+            stroke-width: 3;
+        }
+        .timer-circle-progress {
+            fill: none;
+            stroke: #FF4081;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-dasharray: 100.53;
+            stroke-dashoffset: 100.53;
+            transition: stroke-dashoffset 0.5s ease;
+        }
+        .timer-info {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        .timer-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .timer-value {
+            font-family: monospace;
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -197,6 +250,12 @@
     <div class="section">
         <div class="section-title">Current Page</div>
         <div class="classification-box" id="currentPageClassification">Loading...</div>
+    </div>
+
+    <!-- Active Timers -->
+    <div class="section" id="activeTimersSection" style="display:none;">
+        <div class="section-title">Active Timers</div>
+        <div id="activeTimersList" style="display:flex; flex-direction:column; gap:8px;"></div>
     </div>
 
     <!-- Blocklist -->

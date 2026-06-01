@@ -529,6 +529,7 @@
             <div class="menu-item" data-tab="homepage">Homepage Blocking</div>
             <div class="menu-item" data-tab="website">Website Blocking</div>
             <div class="menu-item" data-tab="content-timers">Content Timers</div>
+            <div class="menu-item" data-tab="classifications">Website Classifications</div>
             <div class="menu-item" data-tab="advanced">Advanced Settings</div>
             <div class="menu-item" data-tab="reports">Reports</div>
         </nav>
@@ -654,6 +655,46 @@
                     <div class="slider"></div>
                 </div>
                 <small style="margin-top: 10px; margin-bottom: 14px;">If disabled, the extension will use custom-tailored selectors to scrape YouTube/Reddit metadata. For all other websites, Mozilla Readability is always used.</small>
+
+            </section>
+
+            <!-- CLASSIFICATIONS TAB -->
+            <section class="tab-section" id="tab-classifications">
+                <h3>Website Classifications</h3>
+                <small>Categorize websites to control how they are tracked and whether their content is analyzed.</small>
+
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 20px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Website Classification</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newClassifyDomain" placeholder="e.g., linkedin.com" style="margin-top:0;">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <select id="newClassifyCategory" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.3); background-color: rgba(15, 23, 42, 0.6); color: #e5e7eb; font-size: 13px; outline: none; transition: border-color 0.2s;">
+                                    <option value="productive">Productive (Bypass Analysis, Unlimited Access)</option>
+                                    <option value="unproductive">Unproductive (Bypass Analysis, Counts as Unproductive)</option>
+                                    <option value="depends">Depends on Content (Analyze Content to Decide)</option>
+                                </select>
+                            </div>
+                            <button id="addClassifyBtn" style="margin-top: 0; padding: 9px 18px;">Add Website</button>
+                        </div>
+                    </div>
+                    <p id="newClassifyStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
+                </div>
+
+                <!-- Suggestions card -->
+                <div id="classificationSuggestionsCard" style="display:none; background: rgba(255, 64, 129, 0.08); border: 1px solid rgba(255, 64, 129, 0.25); padding: 16px; border-radius: 12px; margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #FF4081; font-size: 13px; text-transform: uppercase;">Pending Suggestions</h4>
+                    <small style="color: #e5e7eb; margin-bottom: 12px; display: block; margin-top:0;">These websites are uncategorized but have significant browsing time. Categorize them to configure tracking:</small>
+                    <div id="classificationSuggestionsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <h4 style="margin-top: 30px;">Categorized Websites</h4>
+                <div style="margin-top: 10px; margin-bottom: 12px;">
+                    <input type="text" id="classifySearch" placeholder="Search categorized websites..." style="margin-top:0;">
+                </div>
+                <div class="scrollable-list-container" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                    <ul id="categorizedWebsitesList" style="margin-top: 0;"></ul>
+                </div>
             </section>
 
             <!-- REPORTS TAB -->

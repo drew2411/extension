@@ -57,10 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Init all modules ---
-    if (typeof initIntents   === 'function') initIntents();
-    if (typeof initBlocking  === 'function') initBlocking();
-    if (typeof initTimers    === 'function') initTimers();
-    if (typeof initSettings  === 'function') initSettings();
+    if (typeof initIntents         === 'function') initIntents();
+    if (typeof initBlocking        === 'function') initBlocking();
+    if (typeof initTimers          === 'function') initTimers();
+    if (typeof initClassifications === 'function') initClassifications();
+    if (typeof initSettings        === 'function') initSettings();
     renderReports();
 
     // --- Storage change listener (global) ---
@@ -69,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (changes.intents          && typeof renderIntents    === 'function') renderIntents(changes.intents.newValue || []);
         if (changes.homepageBlocklist && typeof renderHomepages === 'function') renderHomepages(changes.homepageBlocklist.newValue || []);
         if (changes.unproductiveTimers && typeof updateTimerUsage === 'function') updateTimerUsage(changes.unproductiveTimers.newValue);
+        if (changes.domainClassifications && typeof renderClassifications === 'function') renderClassifications(changes.domainClassifications.newValue || {});
         if (changes.useMozillaForYoutube) {
             const el = document.getElementById('useMozillaForYoutube');
             if (el) el.checked = !!changes.useMozillaForYoutube.newValue;
@@ -85,8 +87,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const list = changes.exactUrlBlocklist.newValue || [];
             if (typeof renderExactUrls === 'function') renderExactUrls(list);
         }
-        if (changes.timeHistory && document.getElementById('tab-reports').classList.contains('active')) {
-            renderReports();
+        if (changes.timeHistory) {
+            if (document.getElementById('tab-reports').classList.contains('active')) {
+                renderReports();
+            }
+            if (typeof loadSuggestions === 'function') {
+                loadSuggestions();
+            }
         }
     });
 

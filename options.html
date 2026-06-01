@@ -150,6 +150,7 @@
         <div class="menu-item active" data-tab="intents"><i data-lucide="target"></i>Intents</div>
         <div class="menu-item" data-tab="blocking"><i data-lucide="shield-alert"></i>Blocking</div>
         <div class="menu-item" data-tab="timers"><i data-lucide="timer"></i>Timers</div>
+        <div class="menu-item" data-tab="classifications"><i data-lucide="globe"></i>Websites</div>
         <div class="menu-item" data-tab="reports"><i data-lucide="bar-chart-3"></i>Reports</div>
         <div class="menu-item" data-tab="settings"><i data-lucide="settings"></i>Settings</div>
     </nav>
@@ -250,6 +251,43 @@
             </div>
         </section>
 
+        <!-- CLASSIFICATIONS TAB -->
+        <section class="tab-section" id="tab-classifications">
+            <h3>Website Classifications</h3>
+            <p class="subtitle">Categorize websites to control how they are tracked and whether their content is analyzed.</p>
+
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-bottom:24px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="plus-circle" style="width:16px; height:16px; color:#FF4081;"></i>Add Custom Website Classification</h4>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <input type="text" id="newClassifyDomain" placeholder="e.g. linkedin.com">
+                    <div style="display:flex; gap:8px;">
+                        <select id="newClassifyCategory" style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.6); color:#e5e7eb; font-family:inherit; font-size:13px; outline:none; transition:border-color 0.2s;">
+                            <option value="productive">Productive (Bypass Analysis, Unlimited Access)</option>
+                            <option value="unproductive">Unproductive (Bypass Analysis, Counts as Unproductive)</option>
+                            <option value="depends">Depends on Content (Analyze Content to Decide)</option>
+                        </select>
+                        <button id="addClassifyBtn" style="margin:0; padding:8px 16px;">Add Website</button>
+                    </div>
+                </div>
+                <p id="newClassifyStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+
+            <!-- Suggestions section -->
+            <div id="classificationSuggestionsCard" style="display:none; background:rgba(255,64,129,0.08); border:1px solid rgba(255,64,129,0.25); padding:16px; border-radius:12px; margin-bottom:24px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#FF4081; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="sparkles" style="width:16px; height:16px;"></i>Pending Classification Suggestions</h4>
+                <small style="color:#e5e7eb; margin-bottom:12px; display:block;">These websites are currently uncategorized but have significant browsing time. Categorize them to configure tracking:</small>
+                <div id="classificationSuggestionsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+
+            <h4>Categorized Websites</h4>
+            <div style="margin-top:10px; margin-bottom:12px;">
+                <input type="text" id="classifySearch" placeholder="Search categorized websites..." style="width:100%;">
+            </div>
+            <div class="scrollable-list-container" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                <ul id="categorizedWebsitesList" style="margin-top: 0;"></ul>
+            </div>
+        </section>
+
         <!-- REPORTS TAB -->
         <section class="tab-section" id="tab-reports">
             <h3>Reports</h3>
@@ -298,6 +336,8 @@
             </div>
             <small style="margin-top:8px; margin-bottom:14px;">If disabled, custom tailored scrapers are used for YouTube/Reddit. For all other websites, Mozilla Readability is always used.</small>
 
+
+
             <p id="settingsStatus" class="status-msg"></p>
             <button id="saveSettings" style="margin-top:14px;">Save Settings</button>
         </section>
@@ -308,6 +348,7 @@
 <script src="options-blocking.js"></script>
 <script src="options-timers.js"></script>
 <script src="options-settings.js"></script>
+<script src="options-classifications.js"></script>
 <script src="options.js"></script>
 </body>
 </html>

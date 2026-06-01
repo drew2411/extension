@@ -15,6 +15,31 @@ const MAX_DISCOVERY_BUFFER = 50;
 const recentlyBlockedTabs = new Map();
 
 // --- Helpers ---
+// --- Session State Helpers (persists across Service Worker suspension) ---
+async function getActiveSession() {
+    const res = await chrome.storage.session.get(['activeSession']);
+    return res.activeSession || null;
+}
+async function setActiveSession(session) {
+    if (session === null) {
+        await chrome.storage.session.remove('activeSession');
+    } else {
+        await chrome.storage.session.set({ activeSession: session });
+    }
+}
+async function getUnproductiveSession() {
+    const res = await chrome.storage.session.get(['unproductiveSession']);
+    return res.unproductiveSession || null;
+}
+async function setUnproductiveSession(session) {
+    if (session === null) {
+        await chrome.storage.session.remove('unproductiveSession');
+    } else {
+        await chrome.storage.session.set({ unproductiveSession: session });
+    }
+}
+
+// --- Helpers ---
 function getDomain(url) {
     try { return new URL(url).hostname; } catch (e) { return ""; }
 }
@@ -56,18 +81,64 @@ function urlMatchesStrictRule(url, rule) {
     } catch (e) { return url.startsWith(trimmed); }
 }
 
-function urlMatchesHomepageRule(url, ruleDomain) {
-    if (!url || !ruleDomain) return false;
+function urlMatchesHomepageRule(url, rule) {
+    if (!url || !rule) return false;
     try {
-        const parsed = new URL(url);
-        const host = parsed.hostname.toLowerCase();
-        const rule = ruleDomain.trim().toLowerCase();
+        const parsedUrl = new URL(url);
+        const host = parsedUrl.hostname.toLowerCase();
+        const path = parsedUrl.pathname.toLowerCase().replace(/\/$/, '');
         
-        const isDomainMatch = host === rule || host.endsWith('.' + rule);
-        if (!isDomainMatch) return false;
+        let cleanRule = rule.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
         
-        return parsed.pathname === '/' || parsed.pathname === '';
+        if (cleanRule.includes('/')) {
+            const firstSlash = cleanRule.indexOf('/');
+            const ruleHost = cleanRule.substring(0, firstSlash);
+            const rulePath = cleanRule.substring(firstSlash).replace(/\/$/, '');
+            
+            const hostMatch = host === ruleHost || host.endsWith('.' + ruleHost);
+            if (!hostMatch) return false;
+            
+            return path === rulePath || path.startsWith(rulePath + '/');
+        } else {
+            const hostMatch = host === cleanRule || host.endsWith('.' + cleanRule);
+            if (!hostMatch) return false;
+            
+            if (path === '' || path === '/') return true;
+            
+            const commonHomePaths = [
+                '/feed', '/home', '/feed/', '/home/', '/index.html', '/index.php'
+            ];
+            return commonHomePaths.includes(path);
+        }
     } catch (e) { return false; }
+}
+
+function getDomainClassification(url, classifications) {
+    if (!url) return 'productive';
+    const domain = getDomain(url).toLowerCase();
+    if (!domain) return 'productive';
+    const list = classifications || {};
+    if (list[domain]) return list[domain];
+    const keys = Object.keys(list);
+    for (const key of keys) {
+        if (domain.endsWith('.' + key)) {
+            return list[key];
+        }
+    }
+    return null;
+}
+
+// --- Unified Limit Enforcement Checker ---
+async function checkAndEnforceLimit(tabId, key, limitMinutes, secondsUsedToday, blockReason, intentId = null) {
+    if (limitMinutes === 0) {
+        await blockAndRedirect(tabId, key, `${blockReason} (Always Blocked)`, true, intentId);
+        return true;
+    }
+    if (limitMinutes > 0 && secondsUsedToday >= limitMinutes * 60) {
+        await blockAndRedirect(tabId, key, `${blockReason} (Daily limit of ${limitMinutes}m reached)`, false, intentId);
+        return true;
+    }
+    return false;
 }
 
 // --- Daily Reset ---
@@ -137,36 +208,34 @@ async function handleBlockAction(tabId) {
 }
 
 // --- General Session Tracking ---
-let activeSession = null;
-
-function startSession(tabId, url) {
-    stopSession();
+async function startSession(tabId, url) {
+    await stopSession();
     if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url === rickrollUrl) return;
     const domain = getDomain(url);
     if (!domain) return;
-    activeSession = { tabId, url, domain, startTime: Date.now() };
+    await setActiveSession({ tabId, url, domain, startTime: Date.now() });
 }
 
 async function stopSession() {
-    if (!activeSession) return;
-    const elapsed = Math.round((Date.now() - activeSession.startTime) / 1000);
-    if (elapsed > 0) await recordTime(activeSession.domain, elapsed, activeSession.url, activeSession.tabId);
-    activeSession = null;
+    const session = await getActiveSession();
+    if (!session) return;
+    const elapsed = Math.round((Date.now() - session.startTime) / 1000);
+    if (elapsed > 0) await recordTime(session.domain, elapsed, session.url, session.tabId);
+    await setActiveSession(null);
 }
 
 // --- Unproductive Content Timer ---
-let unproductiveSession = null;
-
-function startUnproductiveTimer(tabId, source) {
-    pauseUnproductiveTimer();
-    unproductiveSession = { tabId, source, startTime: Date.now() };
+async function startUnproductiveTimer(tabId, source) {
+    await pauseUnproductiveTimer();
+    await setUnproductiveSession({ tabId, source, startTime: Date.now() });
 }
 
 async function pauseUnproductiveTimer() {
-    if (!unproductiveSession) return;
-    const elapsed = Math.round((Date.now() - unproductiveSession.startTime) / 1000);
-    if (elapsed > 0) await recordUnproductiveTime(unproductiveSession.source, elapsed, unproductiveSession.tabId);
-    unproductiveSession = null;
+    const session = await getUnproductiveSession();
+    if (!session) return;
+    const elapsed = Math.round((Date.now() - session.startTime) / 1000);
+    if (elapsed > 0) await recordUnproductiveTime(session.source, elapsed, session.tabId);
+    await setUnproductiveSession(null);
 }
 
 async function recordUnproductiveTime(source, seconds, tabId) {
@@ -200,17 +269,13 @@ async function recordUnproductiveTime(source, seconds, tabId) {
     // Check specific timer limit
     if (source && timers[source]) {
         const limit = timers[source].limitMinutes;
-        if (limit > 0 && timers[source].secondsUsedToday >= limit * 60) {
-            if (tabId) handleBlockAction(tabId);
-            return;
-        }
+        const blocked = await checkAndEnforceLimit(tabId, timers[source].id, limit, timers[source].secondsUsedToday, `Content timer "${timers[source].name}"`);
+        if (blocked) return;
     }
     
     // Check overall timer limit
     const overallLimit = timers.overall.limitMinutes;
-    if (overallLimit > 0 && timers.overall.secondsUsedToday >= overallLimit * 60) {
-        if (tabId) handleBlockAction(tabId);
-    }
+    await checkAndEnforceLimit(tabId, 'overall', overallLimit, timers.overall.secondsUsedToday, "Overall Content Limit");
 }
 
 async function recordTime(domain, seconds, url, tabId) {
@@ -232,9 +297,8 @@ async function recordTime(domain, seconds, url, tabId) {
         for (const item of data.homepageBlocklist) {
             if (urlMatchesHomepageRule(url, item.domain) && item.limitMinutes >= 0) {
                 item.secondsUsedToday += seconds;
-                if (item.limitMinutes === 0 || item.secondsUsedToday >= item.limitMinutes * 60) {
-                    if (tabId) handleBlockAction(tabId);
-                }
+                const blocked = await checkAndEnforceLimit(tabId, item.domain, item.limitMinutes, item.secondsUsedToday, `Homepage blocklist for ${item.domain}`);
+                if (blocked) break;
             }
         }
         storageUpdate.homepageBlocklist = data.homepageBlocklist;
@@ -245,9 +309,8 @@ async function recordTime(domain, seconds, url, tabId) {
     if (isYoutubeHome && data.youtubeLimit && data.youtubeLimit.limitMinutes >= 0) {
         data.youtubeLimit.secondsUsedToday += seconds;
         storageUpdate.youtubeLimit = data.youtubeLimit;
-        if (data.youtubeLimit.limitMinutes === 0 || data.youtubeLimit.secondsUsedToday >= data.youtubeLimit.limitMinutes * 60) {
-            if (tabId) handleBlockAction(tabId);
-        }
+        const blocked = await checkAndEnforceLimit(tabId, 'youtube_home_fallback', data.youtubeLimit.limitMinutes, data.youtubeLimit.secondsUsedToday, "YouTube Homepage");
+        if (blocked) return;
     }
 
     // Deprecated Reddit homepage timer fallback
@@ -255,9 +318,8 @@ async function recordTime(domain, seconds, url, tabId) {
     if (isRedditHome && data.redditLimit && data.redditLimit.limitMinutes >= 0) {
         data.redditLimit.secondsUsedToday += seconds;
         storageUpdate.redditLimit = data.redditLimit;
-        if (data.redditLimit.limitMinutes === 0 || data.redditLimit.secondsUsedToday >= data.redditLimit.limitMinutes * 60) {
-            if (tabId) handleBlockAction(tabId);
-        }
+        const blocked = await checkAndEnforceLimit(tabId, 'reddit_home_fallback', data.redditLimit.limitMinutes, data.redditLimit.secondsUsedToday, "Reddit Homepage");
+        if (blocked) return;
     }
 
     // Strict URL blocklist timers
@@ -265,9 +327,8 @@ async function recordTime(domain, seconds, url, tabId) {
         for (const item of data.strictUrlBlocklist) {
             if (urlMatchesStrictRule(url, item.url) && item.limitMinutes >= 0) {
                 item.secondsUsedToday += seconds;
-                if (item.limitMinutes === 0 || item.secondsUsedToday >= item.limitMinutes * 60) {
-                    if (tabId) handleBlockAction(tabId);
-                }
+                const blocked = await checkAndEnforceLimit(tabId, item.url, item.limitMinutes, item.secondsUsedToday, `Strict URL blocklist for ${item.url}`);
+                if (blocked) break;
             }
         }
         storageUpdate.strictUrlBlocklist = data.strictUrlBlocklist;
@@ -283,7 +344,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     try {
         const tab = await chrome.tabs.get(activeInfo.tabId);
         if (tab && tab.url) {
-            startSession(tab.id, tab.url);
+            await startSession(tab.id, tab.url);
             await maybeResumeUnproductiveTimer(tab.id, tab.url);
         }
     } catch (e) { }
@@ -297,7 +358,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
         try {
             const [tab] = await chrome.tabs.query({ active: true, windowId });
             if (tab && tab.url) {
-                startSession(tab.id, tab.url);
+                await startSession(tab.id, tab.url);
                 await maybeResumeUnproductiveTimer(tab.id, tab.url);
             }
         } catch (e) { }
@@ -309,14 +370,16 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name !== 'timeTracker') return;
     await checkAndResetDaily();
 
+    const activeSession = await getActiveSession();
     if (activeSession) {
         const { tabId, url } = activeSession;
         await stopSession();
         try {
             const tab = await chrome.tabs.get(tabId);
-            if (tab && tab.active) startSession(tabId, tab.url || url);
+            if (tab && tab.active) await startSession(tabId, tab.url || url);
         } catch (e) { }
     }
+    const unproductiveSession = await getUnproductiveSession();
     if (unproductiveSession) {
         const { tabId, source } = unproductiveSession;
         await pauseUnproductiveTimer();
@@ -325,7 +388,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             if (tab && tab.active && isContentPageUrl(tab.url)) {
                 const sessionData = await chrome.storage.session.get(tabId.toString());
                 const cls = sessionData[tabId];
-                if (cls && cls.entertainment === true) startUnproductiveTimer(tabId, source);
+                if (cls && cls.entertainment === true) await startUnproductiveTimer(tabId, source);
             }
         } catch (e) { }
     }
@@ -345,34 +408,29 @@ async function maybeResumeUnproductiveTimer(tabId, url) {
 
     const { unproductiveTimers } = await chrome.storage.local.get(['unproductiveTimers']);
     const timers = unproductiveTimers || {};
-    const timerId = findTimerForDomain(domain, timers);
     
     // Check overall limit
     const overall = timers.overall;
-    if (overall && overall.limitMinutes > 0 && overall.secondsUsedToday >= overall.limitMinutes * 60) {
-        handleBlockAction(tabId);
-        return;
+    if (overall) {
+        const blocked = await checkAndEnforceLimit(tabId, 'overall', overall.limitMinutes, overall.secondsUsedToday, "Overall Content Limit");
+        if (blocked) return;
     }
 
+    const timerId = findTimerForDomain(domain, timers);
     if (!timerId) return;
 
     const timer = timers[timerId];
-    if (timer && timer.limitMinutes > 0 && timer.secondsUsedToday >= timer.limitMinutes * 60) {
-        handleBlockAction(tabId);
-    } else {
-        startUnproductiveTimer(tabId, timerId);
+    if (timer) {
+        const blocked = await checkAndEnforceLimit(tabId, timer.id, timer.limitMinutes, timer.secondsUsedToday, `Content timer "${timer.name}"`);
+        if (!blocked) {
+            await startUnproductiveTimer(tabId, timerId);
+        }
     }
 }
 
-// --- URL Updated ---
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (activeSession && activeSession.tabId === tabId && changeInfo.url) {
-        stopSession().then(() => { if (changeInfo.url !== rickrollUrl) startSession(tabId, changeInfo.url); });
-    }
-    if (unproductiveSession && unproductiveSession.tabId === tabId && changeInfo.url) {
-        pauseUnproductiveTimer();
-    }
-    if (changeInfo.status !== 'complete' || !tab.url || tab.url === rickrollUrl) return;
+// --- Rule Evaluation helper ---
+async function evaluateTabRules(tabId, tab) {
+    if (!tab.url || tab.url === rickrollUrl) return;
 
     // Rickroll guard: skip re-blocking within 5s of a block
     const lastBlock = recentlyBlockedTabs.get(tabId);
@@ -381,52 +439,90 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     await checkAndResetDaily();
 
     const url = tab.url;
-    chrome.storage.local.get(['homepageBlocklist', 'strictUrlBlocklist', 'exactUrlBlocklist', 'youtubeLimit', 'redditLimit'], (res) => {
-        // Dynamic Homepage Blocklist checks
-        if (Array.isArray(res.homepageBlocklist)) {
-            const homeEntry = res.homepageBlocklist.find(item => urlMatchesHomepageRule(url, item.domain));
-            if (homeEntry && homeEntry.limitMinutes >= 0) {
-                if (homeEntry.limitMinutes === 0 || homeEntry.secondsUsedToday >= homeEntry.limitMinutes * 60) {
-                    return handleBlockAction(tabId);
-                }
-            }
-        }
+    
+    // Get whitelist and check
+    const { domainClassifications, homepageBlocklist, strictUrlBlocklist, exactUrlBlocklist, youtubeLimit, redditLimit, unproductiveTimers } = await chrome.storage.local.get([
+        'domainClassifications', 'homepageBlocklist', 'strictUrlBlocklist', 'exactUrlBlocklist', 'youtubeLimit', 'redditLimit', 'unproductiveTimers'
+    ]);
 
-        // Deprecated fallback checks
-        const isYoutubeHome = url === 'https://www.youtube.com/' || url === 'https://www.youtube.com';
-        const isRedditHome  = url === 'https://www.reddit.com/'  || url === 'https://www.reddit.com';
-
-        if (isYoutubeHome && res.youtubeLimit && res.youtubeLimit.limitMinutes >= 0) {
-            if (res.youtubeLimit.limitMinutes === 0 || res.youtubeLimit.secondsUsedToday >= res.youtubeLimit.limitMinutes * 60) {
-                return handleBlockAction(tabId);
-            }
+    // Dynamic Homepage Blocklist checks
+    if (Array.isArray(homepageBlocklist)) {
+        const homeEntry = homepageBlocklist.find(item => urlMatchesHomepageRule(url, item.domain));
+        if (homeEntry && homeEntry.limitMinutes >= 0) {
+            const blocked = await checkAndEnforceLimit(tabId, homeEntry.domain, homeEntry.limitMinutes, homeEntry.secondsUsedToday, `Homepage blocklist for ${homeEntry.domain}`);
+            if (blocked) return;
         }
-        if (isRedditHome && res.redditLimit && res.redditLimit.limitMinutes >= 0) {
-            if (res.redditLimit.limitMinutes === 0 || res.redditLimit.secondsUsedToday >= res.redditLimit.limitMinutes * 60) {
-                return handleBlockAction(tabId);
-            }
-        }
+    }
 
-        const strictEntry = (res.strictUrlBlocklist || []).find(item => urlMatchesStrictRule(url, item.url));
-        if (strictEntry && strictEntry.limitMinutes >= 0) {
-            if (strictEntry.limitMinutes === 0 || strictEntry.secondsUsedToday >= strictEntry.limitMinutes * 60) {
-                return handleBlockAction(tabId);
-            }
-        }
-        if ((res.exactUrlBlocklist || []).includes(url)) return handleBlockAction(tabId);
+    // Deprecated fallback checks
+    const isYoutubeHome = url === 'https://www.youtube.com/' || url === 'https://www.youtube.com';
+    const isRedditHome  = url === 'https://www.reddit.com/'  || url === 'https://www.reddit.com';
 
+    if (isYoutubeHome && youtubeLimit && youtubeLimit.limitMinutes >= 0) {
+        const blocked = await checkAndEnforceLimit(tabId, 'youtube_home_fallback', youtubeLimit.limitMinutes, youtubeLimit.secondsUsedToday, "YouTube Homepage");
+        if (blocked) return;
+    }
+    if (isRedditHome && redditLimit && redditLimit.limitMinutes >= 0) {
+        const blocked = await checkAndEnforceLimit(tabId, 'reddit_home_fallback', redditLimit.limitMinutes, redditLimit.secondsUsedToday, "Reddit Homepage");
+        if (blocked) return;
+    }
+
+    const strictEntry = (strictUrlBlocklist || []).find(item => urlMatchesStrictRule(url, item.url));
+    if (strictEntry && strictEntry.limitMinutes >= 0) {
+        const blocked = await checkAndEnforceLimit(tabId, strictEntry.url, strictEntry.limitMinutes, strictEntry.secondsUsedToday, `Strict URL blocklist for ${strictEntry.url}`);
+        if (blocked) return;
+    }
+    if ((exactUrlBlocklist || []).includes(url)) {
+        await blockAndRedirect(tabId, url, "Exact URL blocklist", true, null);
+        return;
+    }
+
+    const classification = getDomainClassification(url, domainClassifications);
+
+    if (classification === 'depends') {
+        await chrome.storage.session.set({ [tabId]: { status: 'classifying', key: getDomain(url), timestamp: Date.now() } });
         injectContentScript(tabId, url);
-    });
+    } else if (classification === 'unproductive') {
+        const blockKey = getDomain(url);
+        const timerId = findTimerForDomain(blockKey, unproductiveTimers || {});
+        await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'Unproductive Website (Categorized)', key: blockKey, timestamp: Date.now(), timerId } });
+        await startUnproductiveTimer(tabId, timerId);
+    } else {
+        const reason = classification === 'productive' ? 'Productive Website (Categorized)' : 'Uncategorized Website (Allowed)';
+        await chrome.storage.session.set({ [tabId]: { status: 'allowed', reasoning: reason, key: getDomain(url), timestamp: Date.now() } });
+        const unproductiveSession = await getUnproductiveSession();
+        if (unproductiveSession && unproductiveSession.tabId === tabId) {
+            await pauseUnproductiveTimer();
+        }
+    }
+}
+
+// --- URL Updated ---
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    const activeSession = await getActiveSession();
+    const unproductiveSession = await getUnproductiveSession();
+    if (activeSession && activeSession.tabId === tabId && changeInfo.url) {
+        await stopSession();
+        if (changeInfo.url !== rickrollUrl) await startSession(tabId, changeInfo.url);
+    }
+    if (unproductiveSession && unproductiveSession.tabId === tabId && changeInfo.url) {
+        await pauseUnproductiveTimer();
+    }
+    if (changeInfo.status !== 'complete' || !tab.url || tab.url === rickrollUrl) return;
+
+    await evaluateTabRules(tabId, tab);
 });
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     if (!details.url || details.url === rickrollUrl) return;
+    const unproductiveSession = await getUnproductiveSession();
     if (unproductiveSession && unproductiveSession.tabId === details.tabId) await pauseUnproductiveTimer();
+    const activeSession = await getActiveSession();
     if (activeSession && activeSession.tabId === details.tabId) {
         await stopSession();
-        startSession(details.tabId, details.url);
+        await startSession(details.tabId, details.url);
     }
-    injectContentScript(details.tabId, details.url);
+    await evaluateTabRules(details.tabId, { url: details.url });
 });
 
 // --- Messages ---
@@ -458,6 +554,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     } else if (message.type === 'getClassification') {
         chrome.storage.session.get(message.tabId.toString(), res => sendResponse(res[message.tabId]));
+        return true;
+    } else if (message.type === 'reEvaluateTab') {
+        chrome.tabs.get(message.tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) return;
+            evaluateTabRules(message.tabId, tab);
+        });
+        sendResponse({ success: true });
         return true;
     }
     return true;
@@ -577,38 +680,29 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
 
     // 1. Check overall timer limit
     if (overall) {
-        if (overall.limitMinutes === 0) {
-            return await blockAndRedirect(tabId, blockKey, "Overall limit: always block (0 min limit).", true, intentId);
-        }
-        if (overall.limitMinutes > 0 && overall.secondsUsedToday >= overall.limitMinutes * 60) {
-            return await blockAndRedirect(tabId, blockKey, `Overall daily limit (${overall.limitMinutes}m) reached.`, false, null);
-        }
+        const blocked = await checkAndEnforceLimit(tabId, 'overall', overall.limitMinutes, overall.secondsUsedToday, "Overall Content Limit", intentId);
+        if (blocked) return;
     }
 
     // 2. If domain is excluded from all content timers (timerId is null)
     if (!timerId) {
-        chrome.storage.session.set({ [tabId]: { entertainment: true, unrestricted: true, reasoning: 'Unproductive — excluded from all content timers', key: blockKey, timestamp: Date.now() } });
+        await chrome.storage.session.set({ [tabId]: { entertainment: true, unrestricted: true, reasoning: 'Unproductive — excluded from all content timers', key: blockKey, timestamp: Date.now() } });
         return;
     }
 
     // 3. Check specific timer limit
     if (!timer || timer.limitMinutes < 0) {
-        chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'Allowed (no specific timer limit)', key: blockKey, timestamp: Date.now(), timerId } });
-        startUnproductiveTimer(tabId, timerId);
+        await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'Allowed (no specific timer limit)', key: blockKey, timestamp: Date.now(), timerId } });
+        await startUnproductiveTimer(tabId, timerId);
         return;
     }
 
-    if (timer.limitMinutes === 0) {
-        return await blockAndRedirect(tabId, blockKey, `Content timer "${timer.name}": always block (0 min limit).`, true, intentId);
-    }
-
-    if (timer.secondsUsedToday >= timer.limitMinutes * 60) {
-        return await blockAndRedirect(tabId, blockKey, `Daily limit for "${timer.name}" (${timer.limitMinutes}m) reached.`, false, null);
-    }
+    const blocked = await checkAndEnforceLimit(tabId, timer.id, timer.limitMinutes, timer.secondsUsedToday, `Content timer "${timer.name}"`, intentId);
+    if (blocked) return;
 
     // Timer not yet exceeded — allow but track
-    chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key: blockKey, timestamp: Date.now(), timerId } });
-    startUnproductiveTimer(tabId, timerId);
+    await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key: blockKey, timestamp: Date.now(), timerId } });
+    await startUnproductiveTimer(tabId, timerId);
 }
 
 // --- Block and Redirect ---
@@ -616,7 +710,7 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
 async function blockAndRedirect(tabId, key, reasoning, permanent = false, intentId = null) {
     if (permanent) await addToBlocklist(key);
     if (intentId) await appendToShadowList(key, intentId);
-    chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key, timestamp: Date.now() } });
+    await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key, timestamp: Date.now() } });
     handleBlockAction(tabId);
 }
 
@@ -733,4 +827,136 @@ async function analyzeWithKeywords(data, intents) {
     }
 
     return { decision: 'unknown', reason: 'Inconclusive ratio' };
-}
+// --- Storage Changes Listener for Automatic Blocklist / Timer Addition ---
+chrome.storage.onChanged.addListener(async (changes, namespace) => {
+    if (namespace !== 'local') return;
+    if (changes.domainClassifications) {
+        const oldClass = changes.domainClassifications.oldValue || {};
+        const newClass = changes.domainClassifications.newValue || {};
+        
+        const { homepageBlocklist, unproductiveTimers } = await chrome.storage.local.get(['homepageBlocklist', 'unproductiveTimers']);
+        const currentHomeList = homepageBlocklist || [];
+        const currentTimers = unproductiveTimers || {};
+        
+        let needsHomepageUpdate = false;
+        let needsTimersUpdate = false;
+        
+        for (const [domain, category] of Object.entries(newClass)) {
+            const oldCategory = oldClass[domain];
+            
+            // If newly unproductive
+            if (category === 'unproductive' && oldCategory !== 'unproductive') {
+                const exists = currentHomeList.some(item => item.domain.toLowerCase() === domain.toLowerCase());
+                if (!exists) {
+                    currentHomeList.push({
+                        domain: domain.toLowerCase(),
+                        limitMinutes: 10,
+                        secondsUsedToday: 0
+                    });
+                    needsHomepageUpdate = true;
+                }
+            }
+            
+            // If newly depends
+            if (category === 'depends' && oldCategory !== 'depends') {
+                let domainCovered = false;
+                for (const timer of Object.values(currentTimers)) {
+                    if (timer.isOverall) continue;
+                    if (Array.isArray(timer.domains) && timer.domains.includes(domain.toLowerCase())) {
+                        domainCovered = true;
+                        break;
+                    }
+                }
+                
+                if (!domainCovered) {
+                    const timerKey = 'timer_' + domain.toLowerCase().replace(/\./g, '_');
+                    currentTimers[timerKey] = {
+                        id: timerKey,
+                        name: `${domain} Content`,
+                        domains: [domain.toLowerCase()],
+                        excludedDomains: [],
+                        limitMinutes: 10,
+                        secondsUsedToday: 0
+                    };
+                    // Exclude from web timer catch-all exclusions
+                    if (currentTimers.web && Array.isArray(currentTimers.web.excludedDomains)) {
+                        if (!currentTimers.web.excludedDomains.includes(domain.toLowerCase())) {
+                            currentTimers.web.excludedDomains.push(domain.toLowerCase());
+                        }
+                    }
+                    needsTimersUpdate = true;
+                }
+            }
+        }
+        
+        const update = {};
+        if (needsHomepageUpdate) {
+            update.homepageBlocklist = currentHomeList;
+        }
+        if (needsTimersUpdate) {
+            update.unproductiveTimers = currentTimers;
+        }
+        if (Object.keys(update).length > 0) {
+            await chrome.storage.local.set(update);
+        }
+    }
+});
+
+// --- Default Storage Initialization ---
+chrome.runtime.onInstalled.addListener(async () => {
+    const res = await chrome.storage.local.get(['domainClassifications', 'homepageBlocklist', 'unproductiveTimers']);
+    const update = {};
+    if (!res.domainClassifications) {
+        update.domainClassifications = {
+            'youtube.com': 'depends',
+            'youtu.be': 'depends',
+            'reddit.com': 'depends',
+            'twitter.com': 'depends',
+            'x.com': 'depends',
+            'google.com': 'productive',
+            'google.co.in': 'productive',
+            'bing.com': 'productive',
+            'duckduckgo.com': 'productive',
+            'yahoo.com': 'productive',
+            'github.com': 'productive',
+            'gitlab.com': 'productive',
+            'bitbucket.org': 'productive',
+            'notion.so': 'productive',
+            'notion.site': 'productive',
+            'slack.com': 'productive',
+            'zoom.us': 'productive',
+            'localhost': 'productive',
+            '127.0.0.1': 'productive',
+            'sheets.google.com': 'productive',
+            'docs.google.com': 'productive',
+            'drive.google.com': 'productive',
+            'gmail.com': 'productive',
+            'trello.com': 'productive',
+            'linear.app': 'productive',
+            'figma.com': 'productive',
+            'canva.com': 'productive',
+            'stackoverflow.com': 'productive',
+            'stackexchange.com': 'productive',
+            'facebook.com': 'unproductive',
+            'instagram.com': 'unproductive',
+            'tiktok.com': 'unproductive'
+        };
+    }
+    if (!res.homepageBlocklist) {
+        update.homepageBlocklist = [
+            { domain: 'youtube.com', limitMinutes: -1, secondsUsedToday: 0 },
+            { domain: 'reddit.com', limitMinutes: -1, secondsUsedToday: 0 }
+        ];
+    }
+    if (!res.unproductiveTimers) {
+        update.unproductiveTimers = {
+            overall: { id: 'overall', name: 'Overall Limit', domains: [], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0, isOverall: true },
+            youtube: { id: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+            reddit:  { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+            web:     { id: 'web', name: 'Other Websites', domains: ['*'], excludedDomains: ['youtube.com', 'youtu.be', 'reddit.com'], limitMinutes: -1, secondsUsedToday: 0 }
+        };
+    }
+    if (Object.keys(update).length > 0) {
+        await chrome.storage.local.set(update);
+    }
+});

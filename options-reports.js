@@ -87,9 +87,10 @@ function renderReports() {
         if (allSites.size) {
             const rows = Array.from(allSites).map(d => ({ domain: d, today: todayData[d] || 0, week: weeklySiteMap[d] || 0 })).sort((a, b) => b.week - a.week);
             html += `<div class="chart-section"><h4 style="margin-top:0;">Per-Site Breakdown</h4>
-                <table class="site-table"><thead><tr><th>Website</th><th>Today</th><th>This Week</th></tr></thead><tbody>`;
+                <div class="scrollable-list-container" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                    <table class="site-table"><thead><tr><th>Website</th><th>Today</th><th>This Week</th></tr></thead><tbody>`;
             rows.forEach(r => { html += `<tr><td>${r.domain}</td><td>${window.formatDuration(r.today)}</td><td>${window.formatDuration(r.week)}</td></tr>`; });
-            html += '</tbody></table></div>';
+            html += '</tbody></table></div></div>';
         }
 
         container.innerHTML = html;

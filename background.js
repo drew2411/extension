@@ -852,33 +852,34 @@ async function analyzeWithKeywords(data, intents) {
     return { decision: 'unknown', reason: 'Inconclusive ratio' };
 }
 
-// --- Storage Changes Listener for Automatic Blocklist / Timer Addition ---
+// --- Storage Changes Listener for Automatic Blocklist / Timer Addition & Cleanups ---
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
     if (namespace !== 'local') return;
     if (changes.domainClassifications) {
         const oldClass = changes.domainClassifications.oldValue || {};
         const newClass = changes.domainClassifications.newValue || {};
         
-        const { homepageBlocklist, unproductiveTimers } = await chrome.storage.local.get(['homepageBlocklist', 'unproductiveTimers']);
-        const currentHomeList = homepageBlocklist || [];
+        const { strictUrlBlocklist, unproductiveTimers } = await chrome.storage.local.get(['strictUrlBlocklist', 'unproductiveTimers']);
+        const currentStrictList = strictUrlBlocklist || [];
         const currentTimers = unproductiveTimers || {};
         
-        let needsHomepageUpdate = false;
+        let needsStrictUpdate = false;
         let needsTimersUpdate = false;
         
+        // 1. Check for additions / changes to unproductive or depends
         for (const [domain, category] of Object.entries(newClass)) {
             const oldCategory = oldClass[domain];
             
             // If newly unproductive
             if (category === 'unproductive' && oldCategory !== 'unproductive') {
-                const exists = currentHomeList.some(item => item.domain.toLowerCase() === domain.toLowerCase());
+                const exists = currentStrictList.some(item => item.url.toLowerCase() === domain.toLowerCase());
                 if (!exists) {
-                    currentHomeList.push({
-                        domain: domain.toLowerCase(),
+                    currentStrictList.push({
+                        url: domain.toLowerCase(),
                         limitMinutes: 10,
                         secondsUsedToday: 0
                     });
-                    needsHomepageUpdate = true;
+                    needsStrictUpdate = true;
                 }
             }
             
@@ -913,10 +914,50 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
                 }
             }
         }
+
+        // 2. Check for removals or changes away from unproductive or depends
+        for (const [domain, oldCategory] of Object.entries(oldClass)) {
+            const newCategory = newClass[domain];
+            
+            // If was unproductive and is no longer unproductive
+            if (oldCategory === 'unproductive' && newCategory !== 'unproductive') {
+                const index = currentStrictList.findIndex(item => item.url.toLowerCase() === domain.toLowerCase());
+                if (index !== -1) {
+                    currentStrictList.splice(index, 1);
+                    needsStrictUpdate = true;
+                }
+            }
+            
+            // If was depends and is no longer depends
+            if (oldCategory === 'depends' && newCategory !== 'depends') {
+                const timerKey = 'timer_' + domain.toLowerCase().replace(/\./g, '_');
+                if (currentTimers[timerKey]) {
+                    delete currentTimers[timerKey];
+                    needsTimersUpdate = true;
+                } else {
+                    for (const [key, timer] of Object.entries(currentTimers)) {
+                        if (timer.isOverall || key === 'youtube' || key === 'reddit' || key === 'web') continue;
+                        if (Array.isArray(timer.domains) && timer.domains.includes(domain.toLowerCase())) {
+                            delete currentTimers[key];
+                            needsTimersUpdate = true;
+                        }
+                    }
+                }
+                
+                // Remove from web exclusions
+                if (currentTimers.web && Array.isArray(currentTimers.web.excludedDomains)) {
+                    const idx = currentTimers.web.excludedDomains.indexOf(domain.toLowerCase());
+                    if (idx !== -1) {
+                        currentTimers.web.excludedDomains.splice(idx, 1);
+                        needsTimersUpdate = true;
+                    }
+                }
+            }
+        }
         
         const update = {};
-        if (needsHomepageUpdate) {
-            update.homepageBlocklist = currentHomeList;
+        if (needsStrictUpdate) {
+            update.strictUrlBlocklist = currentStrictList;
         }
         if (needsTimersUpdate) {
             update.unproductiveTimers = currentTimers;

@@ -121,6 +121,47 @@
                 data.subreddit = url.split('/r/')[1]?.split('/')[0];
             }
 
+            // Instagram specific author scrape fallback
+            if (url.includes('instagram.com')) {
+                let instagramUser = '';
+                // 1. Try scraping from meta og:description or description
+                const metaDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+                                 document.querySelector('meta[name="description"]')?.getAttribute('content');
+                if (metaDesc) {
+                    const match = metaDesc.match(/\(@([a-zA-Z0-9_\.]+)\)/);
+                    if (match) instagramUser = match[1];
+                }
+                // 2. Try selector for header links
+                if (!instagramUser) {
+                    const headerLink = document.querySelector('article header a[role="link"]') ||
+                                       document.querySelector('header a[href^="/"]') ||
+                                       document.querySelector('article header a');
+                    if (headerLink) {
+                        const href = headerLink.getAttribute('href');
+                        if (href) {
+                            const cleanHref = href.replace(/^\/|\/$/g, '');
+                            const parts = cleanHref.split('/');
+                            if (parts.length === 1 && parts[0] && !['p', 'reels', 'reel', 'stories', 'explore', 'direct', 'accounts', 'developer', 'emails'].includes(parts[0])) {
+                                instagramUser = parts[0];
+                            }
+                        }
+                    }
+                }
+                // 3. Fallback to URL path if profile page
+                if (!instagramUser) {
+                    const cleanPath = window.location.pathname.replace(/^\/|\/$/g, '');
+                    const parts = cleanPath.split('/');
+                    if (parts[0] && !['p', 'reels', 'reel', 'stories', 'explore', 'direct', 'accounts', 'developer', 'emails'].includes(parts[0])) {
+                        instagramUser = parts[0];
+                    } else if (parts[0] === 'stories' && parts[1]) {
+                        instagramUser = parts[1];
+                    }
+                }
+                if (instagramUser) {
+                    data.author = instagramUser;
+                }
+            }
+
             sendMessageWithRetry({ type: 'contentData', data });
 
             // Comment blocker check for YouTube and Reddit

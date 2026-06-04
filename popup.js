@@ -1,4 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Global Blocklist State ---
+    let currentBlocklist = [];
+
     // --- On/Off switch ---
     const enabledToggle = document.getElementById('extensionEnabled');
     const enabledLabel  = document.getElementById('enabledLabel');
@@ -111,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function renderClassificationUI(domain, url, tabId, classification, sessionResult) {
+    function renderClassificationUI(domain, url, tabId, classification, sessionResult, tempWhitelist = {}) {
         if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
             classificationDiv.innerHTML = '<span style="color:#64748b;font-style:italic;">No classification available for this page.</span>';
             return;
@@ -149,6 +152,28 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             badgeHtml = '<span class="badge badge-uncategorized">Uncategorized</span>';
             detailHtml = '<div style="font-size:11px;color:#64748b;margin-top:4px;">Allowed by default, tracking usage time.</div>';
+        }
+
+        let blockCreatorHtml = '';
+        if (sessionResult && sessionResult.key) {
+            const key = sessionResult.key;
+            // Check if blocked
+            const isBlocked = currentBlocklist.includes(key);
+            const isTempWhitelisted = tempWhitelist[key] && (Date.now() - tempWhitelist[key].timestamp < 10 * 60 * 1000);
+            
+            if (isBlocked && !isTempWhitelisted) {
+                blockCreatorHtml = `
+                    <button class="btn-block-creator" data-action="unblock" data-key="${key}" style="margin-top: 8px; width: 100%; padding: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #16a34a; background: transparent; color: #16a34a; transition: all 0.2s;">
+                        Unblock Creator (${key})
+                    </button>
+                `;
+            } else {
+                blockCreatorHtml = `
+                    <button class="btn-block-creator" data-action="block" data-key="${key}" style="margin-top: 8px; width: 100%; padding: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #dc2626; background: transparent; color: #dc2626; transition: all 0.2s;">
+                        Block Creator (${key})
+                    </button>
+                `;
+            }
         }
 
         if (classification === null) {
@@ -191,6 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${badgeHtml}
             </div>
             ${detailHtml}
+            ${blockCreatorHtml}
             ${controlsHtml}
         `;
 
@@ -215,6 +241,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
         });
+
+        // Wire block creator button
+        const blockCreatorBtn = classificationDiv.querySelector('.btn-block-creator');
+        if (blockCreatorBtn) {
+            blockCreatorBtn.addEventListener('click', () => {
+                const action = blockCreatorBtn.dataset.action;
+                const key = blockCreatorBtn.dataset.key;
+                if (action === 'block') {
+                    chrome.runtime.sendMessage({ type: 'addToBlocklist', key }, () => {
+                        chrome.runtime.sendMessage({ type: 'reEvaluateTab', tabId }, () => {
+                            loadClassification();
+                        });
+                    });
+                } else {
+                    chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key }, () => {
+                        chrome.runtime.sendMessage({ type: 'reEvaluateTab', tabId }, () => {
+                            loadClassification();
+                        });
+                    });
+                }
+            });
+        }
     }
 
     function loadClassification() {
@@ -227,12 +275,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            chrome.storage.local.get(['domainClassifications'], ({ domainClassifications }) => {
+            chrome.storage.local.get(['domainClassifications', 'tempWhitelist', 'blocklist'], ({ domainClassifications, tempWhitelist, blocklist }) => {
                 const domain = getDomain(url);
                 const classification = getDomainClassification(url, domainClassifications);
+                currentBlocklist = blocklist || [];
 
                 chrome.runtime.sendMessage({ type: 'getClassification', tabId }, (sessionResult) => {
-                    renderClassificationUI(domain, url, tabId, classification, sessionResult);
+                    renderClassificationUI(domain, url, tabId, classification, sessionResult, tempWhitelist || {});
                 });
             });
         });
@@ -240,7 +289,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadClassification();
 
     // --- Blocklist ---
-    let currentBlocklist = [];
     const blocklistItems  = document.getElementById('blocklistItems');
     const blocklistSearch = document.getElementById('blocklistSearch');
 
@@ -255,7 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         list.forEach(key => {
             const li = document.createElement('li');
-            li.textContent = key;
+            const span = document.createElement('span');
+            span.textContent = key;
+            li.appendChild(span);
+            
             const btn = document.createElement('button');
             btn.textContent = 'remove';
             btn.addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key }); });
@@ -339,7 +390,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) { return false; }
     }
+    function homepageRuleMatchesItem(url, item) {
+        if (item && Array.isArray(item.domains)) {
+            const matchesDomain = item.domains.some(d => urlMatchesHomepageRule(url, d));
+            if (matchesDomain) {
+                if (Array.isArray(item.excludedDomains)) {
+                    const isExcluded = item.excludedDomains.some(ed => urlMatchesHomepageRule(url, ed));
+                    if (isExcluded) return false;
+                }
+                return true;
+            }
+            return false;
+        }
+        return item ? urlMatchesHomepageRule(url, item.domain) : false;
+    }
 
+    function strictRuleMatchesItem(url, item) {
+        if (item && Array.isArray(item.urls)) {
+            const matchesUrl = item.urls.some(u => urlMatchesStrictRule(url, u));
+            if (matchesUrl) {
+                if (Array.isArray(item.excludedUrls)) {
+                    const isExcluded = item.excludedUrls.some(eu => urlMatchesStrictRule(url, eu));
+                    if (isExcluded) return false;
+                }
+                return true;
+            }
+            return false;
+        }
+        return item ? urlMatchesStrictRule(url, item.url) : false;
+    }
     function findTimerForDomain(domain, timers) {
         if (!domain) return 'web';
         for (const key of Object.keys(timers)) {
@@ -408,12 +487,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // 1. Strict URL timers
                     if (Array.isArray(strictUrlBlocklist)) {
-                        const strict = strictUrlBlocklist.find(item => urlMatchesStrictRule(url, item.url) && item.limitMinutes >= 0);
+                        const strict = strictUrlBlocklist.find(item => strictRuleMatchesItem(url, item) && item.limitMinutes >= 0);
                         if (strict) {
                             matched.push({
                                 type: 'strict',
-                                name: 'Blocklist Timer',
-                                subText: strict.url,
+                                name: strict.name || 'Blocklist Timer',
+                                subText: Array.isArray(strict.urls) ? strict.urls.join(', ') : strict.url,
                                 limitMinutes: strict.limitMinutes,
                                 secondsUsedToday: strict.secondsUsedToday
                             });
@@ -422,12 +501,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // 2. Homepage timers
                     if (Array.isArray(homepageBlocklist)) {
-                        const home = homepageBlocklist.find(item => urlMatchesHomepageRule(url, item.domain) && item.limitMinutes >= 0);
+                        const home = homepageBlocklist.find(item => homepageRuleMatchesItem(url, item) && item.limitMinutes >= 0);
                         if (home) {
                             matched.push({
                                 type: 'homepage',
-                                name: 'Homepage Timer',
-                                subText: home.domain,
+                                name: home.name || 'Homepage Timer',
+                                subText: Array.isArray(home.domains) ? home.domains.join(', ') : home.domain,
                                 limitMinutes: home.limitMinutes,
                                 secondsUsedToday: home.secondsUsedToday
                             });
@@ -527,10 +606,13 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePopupTimers();
     const timerIntervalId = setInterval(updatePopupTimers, 1000);
 
-    // --- Storage Changes ---
     chrome.storage.onChanged.addListener((changes, ns) => {
         if (ns === 'local') {
-            if (changes.blocklist) { currentBlocklist = changes.blocklist.newValue || []; renderBlocklist(); }
+            if (changes.blocklist) {
+                currentBlocklist = changes.blocklist.newValue || [];
+                renderBlocklist();
+                loadClassification();
+            }
             if (changes.pendingDiscovery) loadDiscovery();
             if (changes.domainClassifications) loadClassification();
             if (changes.unproductiveTimers || changes.homepageBlocklist || changes.strictUrlBlocklist) {

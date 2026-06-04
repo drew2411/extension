@@ -10,11 +10,17 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             width: 320px;
+            max-height: 600px;
+            overflow-y: auto;
             font-family: 'Quicksand', sans-serif;
             background: #0f172a;
             color: #e5e7eb;
             font-size: 13px;
         }
+        body::-webkit-scrollbar { width: 4px; }
+        body::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.2); }
+        body::-webkit-scrollbar-thumb { background: rgba(255, 64, 129, 0.3); border-radius: 10px; }
+        body::-webkit-scrollbar-thumb:hover { background: rgba(255, 64, 129, 0.5); }
         .header {
             display: flex;
             align-items: center;
@@ -263,7 +269,7 @@
 
     <!-- Blocklist -->
     <div class="section">
-        <div class="section-title">Blocked Channels / Subreddits</div>
+        <div class="section-title">Blocked Creators / Channels</div>
         <input type="text" id="blocklistSearch" placeholder="Search blocklist...">
         <ul id="blocklistItems"></ul>
     </div>

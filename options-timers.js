@@ -183,6 +183,82 @@ function initTimers() {
         }
     }
 
+    const typeWebsiteContent = document.getElementById('type-website-content');
+    const typeGroupContent = document.getElementById('type-group-content');
+    const contentWebsiteFields = document.getElementById('content-website-fields');
+    const contentGroupFields = document.getElementById('content-group-fields');
+
+    if (typeWebsiteContent && typeGroupContent) {
+        typeWebsiteContent.addEventListener('change', () => {
+            if (contentWebsiteFields) contentWebsiteFields.style.display = 'flex';
+            if (contentGroupFields) contentGroupFields.style.display = 'none';
+        });
+        typeGroupContent.addEventListener('change', () => {
+            if (contentWebsiteFields) contentWebsiteFields.style.display = 'none';
+            if (contentGroupFields) contentGroupFields.style.display = 'flex';
+        });
+    }
+
+    const addDomainBtn = document.getElementById('addCustomTimerDomainBtn');
+    if (addDomainBtn) {
+        addDomainBtn.addEventListener('click', () => {
+            const domainInput = document.getElementById('newTimerDomain');
+            const limitInput = document.getElementById('newTimerDomainLimit');
+
+            const domain = domainInput ? domainInput.value.trim().toLowerCase() : '';
+            const limitVal = limitInput ? parseInt(limitInput.value) : NaN;
+
+            if (!domain) { window.showStatus('newTimerStatus', 'Domain is required.', true); return; }
+
+            let cleanDomain = domain;
+            try {
+                if (domain.startsWith('http://') || domain.startsWith('https://')) {
+                    cleanDomain = new URL(domain).hostname;
+                } else if (domain.includes('/')) {
+                    cleanDomain = domain.split('/')[0];
+                }
+            } catch(e) {}
+            cleanDomain = cleanDomain.replace(/^www\./, '');
+
+            if (!cleanDomain) { window.showStatus('newTimerStatus', 'Invalid domain.', true); return; }
+            const limitMinutes = isNaN(limitVal) ? -1 : limitVal;
+
+            chrome.storage.local.get(['unproductiveTimers'], (res) => {
+                const timers = res.unproductiveTimers || {
+                    overall: { id: 'overall', name: 'Overall Limit', domains: [], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0, isOverall: true },
+                    youtube: { id: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+                    reddit: { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
+                    web: { id: 'web', name: 'Other Websites', domains: ['*'], excludedDomains: ['youtube.com', 'youtu.be', 'reddit.com'], limitMinutes: -1, secondsUsedToday: 0 }
+                };
+
+                // Check duplicate
+                for (const t of Object.values(timers)) {
+                    if (t.name && t.name.toLowerCase() === cleanDomain.toLowerCase()) {
+                        window.showStatus('newTimerStatus', 'Timer with this name/domain already exists.', true);
+                        return;
+                    }
+                }
+
+                const newId = 'timer_' + Date.now();
+                timers[newId] = {
+                    id: newId,
+                    name: cleanDomain,
+                    domains: [cleanDomain],
+                    excludedDomains: [],
+                    limitMinutes: limitMinutes,
+                    secondsUsedToday: 0
+                };
+
+                chrome.storage.local.set({ unproductiveTimers: timers }, () => {
+                    if (domainInput) domainInput.value = '';
+                    if (limitInput) limitInput.value = '';
+                    window.showStatus('newTimerStatus', 'Timer added successfully!');
+                    renderTimers();
+                });
+            });
+        });
+    }
+
     if (addBtn) {
         addBtn.addEventListener('click', () => {
             const name = newNameInput ? newNameInput.value.trim() : '';
@@ -207,6 +283,13 @@ function initTimers() {
                     reddit: { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0 },
                     web: { id: 'web', name: 'Other Websites', domains: ['*'], excludedDomains: ['youtube.com', 'youtu.be', 'reddit.com'], limitMinutes: -1, secondsUsedToday: 0 }
                 };
+
+                for (const t of Object.values(timers)) {
+                    if (t.name && t.name.toLowerCase() === name.toLowerCase()) {
+                        window.showStatus('newTimerStatus', 'Timer with this name already exists.', true);
+                        return;
+                    }
+                }
 
                 const newId = 'timer_' + Date.now();
                 timers[newId] = {

@@ -975,13 +975,40 @@ async function analyzeWithKeywords(data, intents) {
     const text = fields.filter(Boolean).join('\n').toLowerCase();
     if (!text) return { decision: 'unknown', reason: 'No text' };
 
-    const countHits = (keywords) => {
+    const countHits = (intent) => {
         let count = 0;
-        (keywords || []).forEach(kw => {
+        const keywords = [...(intent.keywords || [])];
+        
+        // Programmatically inject the original phrase
+        const original = (intent.original_phrase || '').toLowerCase().trim();
+        if (original && !keywords.includes(original)) {
+            keywords.push(original);
+        }
+        
+        // For multi-word original phrases, inject their single-word components if they are unique and > 3 characters
+        if (original.includes(' ')) {
+            const words = original.split(/\s+/).filter(w => w.length > 3);
+            words.forEach(w => {
+                if (!keywords.includes(w)) keywords.push(w);
+            });
+        }
+
+        keywords.forEach(kw => {
             if (!kw) return;
-            const pattern = new RegExp(`(^|[^a-z0-9])${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'gi');
+            const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // Match standard word boundaries, or hashtag prefix, or hyphenated bounds, and support plural suffixes
+            const pattern = new RegExp(`(?:\\b|#)${escaped}(?:\\b|s|es)`, 'gi');
             const matches = text.match(pattern);
             if (matches) count += matches.length;
+
+            // Also support hashtag matching for multi-word phrases (e.g., "genshin impact" matches "#GenshinImpact")
+            if (kw.includes(' ')) {
+                const joint = kw.replace(/\s+/g, '');
+                const jointPattern = new RegExp(`(?:\\b|#)${joint}(?:\\b|s|es)`, 'gi');
+                const jointMatches = text.match(jointPattern);
+                if (jointMatches) count += jointMatches.length;
+            }
         });
         return count;
     };
@@ -992,13 +1019,13 @@ async function analyzeWithKeywords(data, intents) {
 
     let bestUnprodHits = 0, bestUnprodIntent = null;
     for (const intent of unproductiveIntents) {
-        const hits = countHits(intent.keywords);
+        const hits = countHits(intent);
         if (hits > bestUnprodHits) { bestUnprodHits = hits; bestUnprodIntent = intent; }
     }
 
     let bestProdHits = 0, bestProdIntent = null;
     for (const intent of productiveIntents) {
-        const hits = countHits(intent.keywords);
+        const hits = countHits(intent);
         if (hits > bestProdHits) { bestProdHits = hits; bestProdIntent = intent; }
     }
 

@@ -37,7 +37,7 @@ Respond ONLY with valid JSON. No comments, no trailing commas:
 }
 
 // --- Keyword Generation ---
-export const KEYWORD_GEN_SYSTEM = `You are a keyword generation specialist for a productivity browser extension. Your job is to generate precise content-matching keywords for a specific target, so the extension can identify matching content on YouTube and Reddit.`;
+export const KEYWORD_GEN_SYSTEM = `You are an expert taxonomy, classification, and keyword expansion specialist for a focus-enhancing browser extension. Your job is to generate a list of high-density, high-recall keywords for a specific target, so the extension can identify matching content (videos, posts, discussions) on YouTube and Reddit.`;
 
 export function getKeywordGenPrompt(phrase, clarification, category, assumedIdentity = null, personaContext = '') {
     const intentDirection = category === 'productive' ? 'content I want to see and allow' : 'content I want to block';
@@ -52,14 +52,18 @@ Intent direction: ${intentDirection}
 ${clarNote}
 ${personaNote}
 
-Context: These keywords will be matched against YouTube video titles, descriptions, Reddit post titles, post body text, and comments. Generate keywords that would realistically appear in that content.
+Context: These keywords will be matched against YouTube video titles, descriptions, channel names, Reddit post titles, subreddit names, post body text, and comments. We need a broad set of highly specific keywords that will realistically appear in matching content to maximize local detection.
 
 Rules:
-- Keywords MUST be specific to "${phrase}" — not to similar entities or adjacent topics.
-- Keywords must look like real phrases found in YouTube titles or Reddit posts.
-- Be specific. Good: "conan o'brien clueless gamer", "conan o'brien armenia trip". Bad: "comedian show", "late night tv".
-- No trivia (age, height, net worth), no generic descriptors.
-- 3 to 6 keywords max.
+- Generate 10 to 15 keywords.
+- Keywords MUST be specific to "${phrase}" or its direct context.
+- Keywords must be short: maximum 3 words (prefer 1-2 words). Avoid long-tail search query-like sentences (e.g. do NOT generate "how to play genshin impact", generate "genshin gameplay" instead).
+- Structure the keywords using a mix of these three groups:
+  1. Core Terms: Variations of the target name itself (e.g. abbreviations, parent/associated companies, common handles). E.g. "genshin", "genshin impact", "mihoyo", "hoyoverse".
+  2. Jargon & Proper Nouns: Key proper nouns unique to the entity (famous characters, major systems, jargon, slang, lore terms). E.g. "paimon", "primogems", "teyvat", "wish banner", "gnosis", "archon".
+  3. Short Context Phrases: Shorter, flexible combinations. E.g. "genshin build", "genshin gameplay", "genshin pull".
+- Strictly avoid generic words (like "game", "video", "tutorial", "fun") unless they are combined with the entity name (e.g. "genshin video" is okay, but just "video" is bad).
+- Do not include trivia (age, height, net worth).
 
 If the Scope Constraint asks to exclude a sub-topic and keep it in the opposite category (e.g. "except tutorials"), generate a bonus_intent for that sub-topic. Otherwise leave bonus_intents empty.
 

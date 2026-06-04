@@ -27,9 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const newLimitInput = document.getElementById('newTimerLimit');
     const addBtn = document.getElementById('addCustomTimerBtn');
     const statusEl = document.getElementById('newTimerStatus');
-
-    const useMozillaForYoutubeInput = document.getElementById('useMozillaForYoutube');
-    const useMozillaForRedditInput = document.getElementById('useMozillaForReddit');
     const newClassifyDomainInput = document.getElementById('newClassifyDomain');
     const newClassifyCategorySelect = document.getElementById('newClassifyCategory');
     const addClassifyBtn = document.getElementById('addClassifyBtn');
@@ -71,8 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'heuristicDominanceRatio',
         'blockAction',
         'unproductiveTimers',
-        'useMozillaForYoutube',
-        'useMozillaForReddit',
         'domainClassifications'
     ], (result) => {
         // Mode
@@ -119,14 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
             web: { id: 'web', name: 'Other Websites', domains: ['*'], limitMinutes: 0, secondsUsedToday: 0 }
         };
         renderTimerListUI(timers);
-
-        // Readability options
-        if (useMozillaForYoutubeInput) {
-            useMozillaForYoutubeInput.checked = !!result.useMozillaForYoutube;
-        }
-        if (useMozillaForRedditInput) {
-            useMozillaForRedditInput.checked = !!result.useMozillaForReddit;
-        }
 
         // Classifications
         const classifications = result.domainClassifications || {};
@@ -441,15 +428,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedActionRadio = Array.from(actionRadios).find(r => r.checked);
         const blockAction = selectedActionRadio ? selectedActionRadio.value : (blockingMode === 'STRICT' ? 'RICKROLL' : 'GREYSCALE');
 
-        const useMozillaForYoutube = useMozillaForYoutubeInput ? useMozillaForYoutubeInput.checked : false;
-        const useMozillaForReddit = useMozillaForRedditInput ? useMozillaForRedditInput.checked : false;
-
         chrome.storage.local.set({
             blockingMode,
             heuristicDominanceRatio: ratio,
-            blockAction,
-            useMozillaForYoutube,
-            useMozillaForReddit
+            blockAction
         });
     }
 
@@ -469,9 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     actionRadios.forEach(radio => radio.addEventListener('change', saveAllSettings));
     [heuristicDominanceRatioInput].forEach(el => {
-        if (el) el.addEventListener('change', saveAllSettings);
-    });
-    [useMozillaForYoutubeInput, useMozillaForRedditInput].forEach(el => {
         if (el) el.addEventListener('change', saveAllSettings);
     });
 
@@ -1148,12 +1127,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (changes.unproductiveTimers) {
             renderTimerListUI(changes.unproductiveTimers.newValue || {});
-        }
-        if (changes.useMozillaForYoutube) {
-            if (useMozillaForYoutubeInput) useMozillaForYoutubeInput.checked = !!changes.useMozillaForYoutube.newValue;
-        }
-        if (changes.useMozillaForReddit) {
-            if (useMozillaForRedditInput) useMozillaForRedditInput.checked = !!changes.useMozillaForReddit.newValue;
         }
     });
 });

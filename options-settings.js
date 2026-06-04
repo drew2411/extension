@@ -6,11 +6,9 @@ function initSettings() {
     const modeDesc    = document.getElementById('modeDescription');
     const actionRadios = document.querySelectorAll('input[name="blockAction"]');
     const ratioInput  = document.getElementById('heuristicDominanceRatio');
-    const ytReadabilityCheckbox = document.getElementById('useMozillaForYoutube');
-    const redditReadabilityCheckbox = document.getElementById('useMozillaForReddit');
     const saveBtn     = document.getElementById('saveSettings');
 
-    chrome.storage.local.get(['groqApiKey', 'blockingMode', 'blockAction', 'heuristicDominanceRatio', 'useMozillaForYoutube', 'useMozillaForReddit'], (res) => {
+    chrome.storage.local.get(['groqApiKey', 'blockingMode', 'blockAction', 'heuristicDominanceRatio'], (res) => {
         if (groqInput && res.groqApiKey) groqInput.value = res.groqApiKey;
 
         const mode = res.blockingMode === 'STRICT' ? 'STRICT' : 'LENIENT';
@@ -20,11 +18,8 @@ function initSettings() {
         const action = res.blockAction || (mode === 'STRICT' ? 'RICKROLL' : 'GREYSCALE');
         actionRadios.forEach(r => { r.checked = (r.value === action); });
 
-        const ratio = typeof res.heuristicDominanceRatio === 'number' ? res.heuristicDominanceRatio : 3.0;
+        const ratio = typeof res.heuristicDominanceRatio === 'number' ? res.heuristicDominanceRatio : 2.0;
         if (ratioInput) ratioInput.value = ratio;
-
-        if (ytReadabilityCheckbox) ytReadabilityCheckbox.checked = !!res.useMozillaForYoutube;
-        if (redditReadabilityCheckbox) redditReadabilityCheckbox.checked = !!res.useMozillaForReddit;
     });
 
     modeRadios.forEach(r => r.addEventListener('change', () => updateModeDesc(r.value)));
@@ -44,16 +39,12 @@ function initSettings() {
             const selectedMode   = Array.from(modeRadios).find(r => r.checked);
             const selectedAction = Array.from(actionRadios).find(r => r.checked);
             const ratioVal       = parseFloat(ratioInput?.value);
-            const useMozillaForYoutube = ytReadabilityCheckbox ? ytReadabilityCheckbox.checked : false;
-            const useMozillaForReddit  = redditReadabilityCheckbox ? redditReadabilityCheckbox.checked : false;
 
             chrome.storage.local.set({
                 groqApiKey: apiKey,
                 blockingMode: selectedMode  ? selectedMode.value  : 'LENIENT',
                 blockAction:  selectedAction ? selectedAction.value : 'GREYSCALE',
-                heuristicDominanceRatio: isNaN(ratioVal) || ratioVal < 1 ? 3.0 : ratioVal,
-                useMozillaForYoutube,
-                useMozillaForReddit
+                heuristicDominanceRatio: isNaN(ratioVal) || ratioVal < 1 ? 2.0 : ratioVal
             }, () => {
                 window.showStatus('settingsStatus', 'Settings saved!');
             });

@@ -71,14 +71,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (changes.homepageBlocklist && typeof renderHomepages === 'function') renderHomepages(changes.homepageBlocklist.newValue || []);
         if (changes.unproductiveTimers && typeof updateTimerUsage === 'function') updateTimerUsage(changes.unproductiveTimers.newValue);
         if (changes.domainClassifications && typeof renderClassifications === 'function') renderClassifications(changes.domainClassifications.newValue || {});
-        if (changes.useMozillaForYoutube) {
-            const el = document.getElementById('useMozillaForYoutube');
-            if (el) el.checked = !!changes.useMozillaForYoutube.newValue;
-        }
-        if (changes.useMozillaForReddit) {
-            const el = document.getElementById('useMozillaForReddit');
-            if (el) el.checked = !!changes.useMozillaForReddit.newValue;
-        }
         if (changes.strictUrlBlocklist) {
             const list = changes.strictUrlBlocklist.newValue || [];
             if (typeof renderStrictUrls === 'function') renderStrictUrls(list);

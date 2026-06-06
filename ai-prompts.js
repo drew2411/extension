@@ -90,25 +90,51 @@ If no clear new themes, reply with an empty array: []`;
 
 // --- General Classifier ---
 export function getClassifyPrompt(source, blockKey, title, contentOrDesc, productiveContent, unwantedContent, userInstructions) {
-    return `You are a strict content classification assistant.
+    return `You are a strict content classification assistant for a productivity browser extension. Your job is to classify web pages, YouTube videos, and Reddit posts to determine if they are distracting "entertainment" (unproductive) or "productive" (educational/work-related).
 
 User Preferences:
 - Productive Content (HIGH PRIORITY): ${productiveContent || 'Not provided'}
 - Unwanted Content (BLOCK): ${unwantedContent || 'Not provided'}
-- General Instructions: ${userInstructions ? JSON.stringify(userInstructions) : 'Not available'}
+- Custom User Rules: ${userInstructions ? JSON.stringify(userInstructions) : 'Not available'}
 
 Content to Classify:
 - Source: ${source}
-- ${source === 'youtube' ? 'Channel' : (source === 'reddit' ? 'Subreddit' : 'Website')}: ${blockKey}
+- Origin (${source === 'youtube' ? 'Channel' : (source === 'reddit' ? 'Subreddit' : 'Website')} Name): ${blockKey}
 - Title: ${title}
 - Content/Description: ${contentOrDesc || 'Not available'}
 
-Rules:
-1. If content matches Productive list → NOT entertainment (unless also in Unwanted)
-2. If content matches Unwanted list → IS entertainment
-3. Otherwise classify by general nature
+General Instructions for Classification:
+1. DEFINITIONS:
+   - "Entertainment" (unproductive / block): Content designed for amusement, relaxation, distraction, or leisure. This includes:
+     * Video games, gameplay, playthroughs, game teasers, gacha pulls, game reviews.
+     * Comedy, memes, jokes, satire, shitposts, fan animations, and humor (even if themed around productive topics like programming jokes).
+     * Pop culture, anime, cartoons, vlogs (lifestyle, setup tours, daily routines), movies, TV shows, and celebrity gossip.
+     * Fiction, creative writing, sports, recreational hobbies, and general social media browsing.
+   - "Productive / Utility" (allow): Content designed for active learning, work, or professional development. This includes:
+     * Coding tutorials, programming guides, API documentations, software engineering lectures.
+     * Scientific research, physics, mathematics, academic lectures, and historical/cultural documentaries.
+     * Business, economics, finance, global geopolitical news, industry updates, and tech advancements.
+     * Productivity methodologies, language learning, design/UI/UX theory, and professional skills tutorials.
 
-Reply ONLY as JSON: {"reasoning": "brief explanation", "entertainment": true/false}`;
+2. CLASSIFICATION PROTOCOLS:
+   - Check Productive Matches: If the content is an educational/tutorial resource directly teaching or discussing a topic in the "Productive Content" list, classify it as "NOT entertainment" (entertainment: false), unless it is overridden by the Unwanted list.
+   - Check Unwanted Matches: If the content is about a topic in the "Unwanted Content" list, classify it as "entertainment" (entertainment: true).
+   - Check for Humor and Memes: Humor, memes, jokes, and satire (e.g. "/r/programmerhumor" posts or funny compilation videos) are ALWAYS entertainment (entertainment: true), even if they mention productive topics like Python, math, or history.
+   - Screen Vlogs and Lifestyle: General creator vlogs, setup showcases, "day in the life" videos, and casual conversations/podcasts without a concrete educational outline are entertainment (entertainment: true).
+   - Bypass Clickbait: Clickbait or sensationalist titles (e.g., "I built X in 2 hours and hated it") should be classified based on their underlying description and context. If it is a walkthrough showing code and explaining algorithms, it is productive. If it is purely showmanship, reactions, or entertainment, it is entertainment.
+   - Handle General News: Geopolitical news, technological industry updates, business reports, and scientific articles are NOT entertainment (entertainment: false).
+   - Strict Default: If the content is ambiguous or contains a mix of comedy and education where the primary purpose is entertainment/amusement, default to classifying it as entertainment (entertainment: true).
+
+Rules:
+1. If content matches Productive list → NOT entertainment (unless also in Unwanted or contains humor/vlogging)
+2. If content matches Unwanted list → IS entertainment
+3. Otherwise classify by general nature using the General Instructions above
+
+Reply ONLY as a valid JSON object. Do not include any markdown formatting or extra text outside the JSON block:
+{
+  "reasoning": "A concise, specific explanation referencing title/origin details and matching guidelines.",
+  "entertainment": true/false
+}`;
 }
 
 // --- Strict Classifier ---

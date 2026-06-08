@@ -135,3 +135,18 @@ Power users need the ability to override AI mistakes.
 
 
 5. **Storage Logic:** Implement the `shadow_list` and the local batching array for the Discovery Engine.
+
+---
+
+## 6. Final Implemented V4 Features (Update)
+
+While the original technical spec focused on YouTube and Reddit, the final V4 implementation dramatically expanded the scope based on real-world usage constraints:
+
+* **Universal Website Support**: The extension now runs classification and blocking logic universally across *all* websites.
+* **Instagram Specifics**: Added dedicated Instagram creator scraping and popup creator blocking controls.
+* **Group Timers**: Users can now create time limits for a *group* of websites or content intents, pooling the timer across them (applicable to Homepage, Strict URL, Exact URL, and Content Timers).
+* **Creator Blocklist**: Explicit background logic to support blocking specific creators completely.
+* **Productive Dominance**: A scoring system (default factor 2.0) where productive elements can outweigh unproductive ones when determining final classification.
+* **High-Recall Keyword Engine**: Revamped `KEYWORD_GEN_SYSTEM` to generate multi-tier, high-density short keywords.
+* **Enhanced Local Match Detection**: Regex matching now supports hashtag matching, plurals, joint phrases (ignoring spaces), and automatic injection of original search phrases.
+* **Strict Definitions**: The general classification prompt now uses detailed definitions for productive vs. entertainment content to heavily reduce LLM ambiguity.

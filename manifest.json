@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Custom Content Blocker: Improve Productivity",
   "version": "4.0",
-  "description": "Block custom content across all websites using AI intent detection. Features website, homepage, content group timers & creator blocks. Requires your Groq API Key.",
+  "description": "Block custom content on any site using AI intent detection. Features website & group timers, plus creator blocks. Groq API required.",
   "permissions": [
     "storage",
     "tabs",

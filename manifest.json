@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Custom Content Blocker: Improve Productivity",
   "version": "4.0",
-  "description": "Block custom content on Reddit and YouTube using AI-powered intent detection. Includes website, homepage, and content timers. Requires user-provided Groq API Key.",
+  "description": "Block custom content on Reddit and YouTube using AI intent detection. Includes website, homepage, and content group timers. Requires a user-provided Groq API Key.",
   "permissions": [
     "storage",
     "tabs",
@@ -27,11 +27,16 @@
       "matches": ["https://www.reddit.com/r/*"],
       "js": ["reddit.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["options.html", "advanced.html"],
+      "resources": ["options.html"],
       "matches": ["<all_urls>"]
     }
   ],

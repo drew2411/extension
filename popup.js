@@ -1,150 +1,629 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const tabs = document.querySelectorAll('.nav-tab');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const classificationsList = document.getElementById('classificationsList');
+    // --- Global Blocklist State ---
+    let currentBlocklist = [];
+
+    // --- On/Off switch ---
+    const enabledToggle = document.getElementById('extensionEnabled');
+    const enabledLabel  = document.getElementById('enabledLabel');
+
+    chrome.storage.local.get(['extensionEnabled'], ({ extensionEnabled }) => {
+        const enabled = extensionEnabled !== false;
+        enabledToggle.checked = enabled;
+        enabledLabel.textContent = enabled ? 'ON' : 'OFF';
+    });
+
+    enabledToggle.addEventListener('change', () => {
+        const enabled = enabledToggle.checked;
+        enabledLabel.textContent = enabled ? 'ON' : 'OFF';
+        chrome.storage.local.set({ extensionEnabled: enabled });
+    });
+
+    // --- Comment Mode ---
+    const commentButtons = document.querySelectorAll('.comment-toggle button');
+    let currentCommentMode = 'off';
+
+    chrome.storage.local.get(['commentMode'], ({ commentMode }) => {
+        currentCommentMode = commentMode || 'off';
+        updateCommentUI(currentCommentMode);
+    });
+
+    commentButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentCommentMode = btn.dataset.mode;
+            chrome.storage.local.set({ commentMode: currentCommentMode });
+            updateCommentUI(currentCommentMode);
+        });
+    });
+
+    function updateCommentUI(mode) {
+        commentButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    }
+
+    // --- Discovery Card ---
+    const discoveryCard  = document.getElementById('discoveryCard');
+    const discoveryTheme = document.getElementById('discoveryTheme');
+    let pendingDiscovery = null;
+
+    function loadDiscovery() {
+        chrome.storage.local.get(['pendingDiscovery'], ({ pendingDiscovery: pd }) => {
+            if (pd && pd.suggestions && pd.suggestions.length > 0) {
+                pendingDiscovery = pd;
+                const theme = pd.suggestions[0].theme;
+                discoveryTheme.textContent = theme;
+                discoveryCard.style.display = 'block';
+                lucide.createIcons();
+            } else {
+                discoveryCard.style.display = 'none';
+            }
+        });
+    }
+    loadDiscovery();
+
+    document.getElementById('discoveryProductive').addEventListener('click', () => handleDiscovery('productive'));
+    document.getElementById('discoveryUnproductive').addEventListener('click', () => handleDiscovery('unproductive'));
+    document.getElementById('discoveryDismiss').addEventListener('click', () => dismissDiscovery());
+
+    function handleDiscovery(category) {
+        if (!pendingDiscovery) return;
+        const theme = pendingDiscovery.suggestions[0].theme;
+        // Ask background to generate keywords and add as intent
+        chrome.storage.local.get(['groqApiKey', 'intents'], ({ groqApiKey, intents }) => {
+            const existingIntents = intents || [];
+            chrome.runtime.sendMessage({ type: 'generateIntentKeywords', phrase: theme, clarification: null, category }, (response) => {
+                const keywords = response?.keywords || [];
+                const newIntent = {
+                    id: `intent_${Date.now()}`,
+                    original_phrase: theme,
+                    category,
+                    keywords,
+                    clarification: null
+                };
+                existingIntents.push(newIntent);
+                chrome.storage.local.set({ intents: existingIntents });
+            });
+        });
+        dismissDiscovery();
+    }
+
+    function dismissDiscovery() {
+        chrome.storage.local.remove('pendingDiscovery');
+        chrome.action.setBadgeText({ text: '' });
+        discoveryCard.style.display = 'none';
+        pendingDiscovery = null;
+    }
+
+    // --- Current Page Classification ---
     const classificationDiv = document.getElementById('currentPageClassification');
 
-    let originalProductiveContent = '';
-    let originalUnwantedContent = '';
+    function getDomain(url) {
+        try { return new URL(url).hostname; } catch (e) { return ""; }
+    }
 
-    // --- Tab Navigation ---
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            tabContents.forEach(content => content.classList.remove('active'));
-            document.getElementById(tab.dataset.tab).classList.add('active');
-        });
-    });
+    function getDomainClassification(url, classifications) {
+        if (!url) return null;
+        const domain = getDomain(url).toLowerCase();
+        if (!domain) return null;
+        const list = classifications || {};
+        if (list[domain]) return list[domain];
+        const keys = Object.keys(list);
+        for (const key of keys) {
+            if (domain.endsWith('.' + key)) {
+                return list[key];
+            }
+        }
+        return null;
+    }
 
-    // --- Classification Display ---
-    function renderClassification(result) {
-        if (!classificationDiv) return;
-        if (!result) {
-            classificationDiv.innerHTML = 'No classification available for this page.';
+    function renderClassificationUI(domain, url, tabId, classification, sessionResult, tempWhitelist = {}) {
+        if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+            classificationDiv.innerHTML = '<span style="color:#64748b;font-style:italic;">No classification available for this page.</span>';
             return;
         }
 
-        let html = '';
-        const key = result.key ? `<em>${result.key}</em>` : 'this page';
+        let badgeHtml = '';
+        let detailHtml = '';
+        let controlsHtml = '';
 
-        if (result.status === 'classifying') {
-            html = `<b>Status:</b> Analyzing content for ${key}...`;
+        if (classification === 'productive') {
+            badgeHtml = '<span class="badge badge-productive">Productive</span>';
+            detailHtml = '<div style="font-size:11px;color:#64748b;margin-top:4px;">Productive Website (Bypassed)</div>';
+        } else if (classification === 'unproductive') {
+            badgeHtml = '<span class="badge badge-unproductive">Unproductive</span>';
+            detailHtml = '<div style="font-size:11px;color:#64748b;margin-top:4px;">Unproductive Website (Timers Enabled)</div>';
+        } else if (classification === 'depends') {
+            badgeHtml = '<span class="badge badge-depends">Depends on Content</span>';
+            if (sessionResult) {
+                if (sessionResult.status === 'classifying') {
+                    detailHtml = `<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Analyzing page content...</div>`;
+                } else {
+                    const contentBadge = sessionResult.entertainment
+                        ? (sessionResult.unrestricted
+                            ? '<span class="badge badge-unrestricted">Unproductive (Unrestricted)</span>'
+                            : '<span class="badge badge-entertainment">Entertainment</span>')
+                        : '<span class="badge badge-productive">Productive</span>';
+                    detailHtml = `
+                        <div style="font-size:11px;color:#e5e7eb;margin-top:4px;">Page analysis: ${contentBadge}</div>
+                        <div style="font-size:10px;color:#64748b;margin-top:2px;">${sessionResult.reasoning || ''}</div>
+                    `;
+                }
+            } else {
+                detailHtml = '<div style="font-size:11px;color:#64748b;margin-top:4px;">Pending page classification.</div>';
+            }
         } else {
-            const isEntertainment = result.entertainment;
-            html = `
-                <p style="margin-top:0;"><b>Content:</b> ${key}</p>
-                <p><b>Classification:</b> ${isEntertainment ? '<span style="color:red;">Entertainment</span>' : '<span style="color:green;">Not Entertainment</span>'}</p>
-                <p><b>Reason:</b> ${result.reasoning || 'N/A'}</p>
+            badgeHtml = '<span class="badge badge-uncategorized">Uncategorized</span>';
+            detailHtml = '<div style="font-size:11px;color:#64748b;margin-top:4px;">Allowed by default, tracking usage time.</div>';
+        }
+
+        let blockCreatorHtml = '';
+        if (sessionResult && sessionResult.key) {
+            const key = sessionResult.key;
+            // Check if blocked
+            const isBlocked = currentBlocklist.includes(key);
+            const isTempWhitelisted = tempWhitelist[key] && (Date.now() - tempWhitelist[key].timestamp < 10 * 60 * 1000);
+            
+            if (isBlocked && !isTempWhitelisted) {
+                blockCreatorHtml = `
+                    <button class="btn-block-creator" data-action="unblock" data-key="${key}" style="margin-top: 8px; width: 100%; padding: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #16a34a; background: transparent; color: #16a34a; transition: all 0.2s;">
+                        Unblock Creator (${key})
+                    </button>
+                `;
+            } else {
+                blockCreatorHtml = `
+                    <button class="btn-block-creator" data-action="block" data-key="${key}" style="margin-top: 8px; width: 100%; padding: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #dc2626; background: transparent; color: #dc2626; transition: all 0.2s;">
+                        Block Creator (${key})
+                    </button>
+                `;
+            }
+        }
+
+        if (classification === null) {
+            // Render nice, big opt-in buttons
+            controlsHtml = `
+                <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
+                    <span style="font-size:10px; text-transform:uppercase; color:#94a3b8; font-weight:600; letter-spacing:0.05em;">Categorize this site:</span>
+                    <div style="display:flex; gap:6px; margin-top:2px;">
+                        <button class="btn-select-cat" data-category="productive" style="flex:1; padding:6px 4px; font-size:10px; font-weight:600; cursor:pointer; border-radius:6px; border:none; background:#16a34a; color:#fff;">Productive</button>
+                        <button class="btn-select-cat" data-category="unproductive" style="flex:1; padding:6px 4px; font-size:10px; font-weight:600; cursor:pointer; border-radius:6px; border:none; background:#dc2626; color:#fff;">Unproductive</button>
+                        <button class="btn-select-cat" data-category="depends" style="flex:1; padding:6px 4px; font-size:10px; font-weight:600; cursor:pointer; border-radius:6px; border:none; background:#fb923c; color:#fff;">Depends</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Render smaller modify row
+            const getBtnStyle = (active, color) => {
+                if (active) {
+                    return `background: ${color}; color: #fff; border: 1px solid ${color};`;
+                }
+                return `background: transparent; color: #64748b; border: 1px solid rgba(148,163,184,0.2);`;
+            };
+
+            controlsHtml = `
+                <div style="margin-top:10px; border-top:1px solid rgba(148,163,184,0.1); padding-top:8px; display:flex; flex-direction:column; gap:4px;">
+                    <span style="font-size:9px; text-transform:uppercase; color:#64748b; font-weight:600; letter-spacing:0.05em;">Change Category:</span>
+                    <div style="display:flex; gap:4px; margin-top:2px;">
+                        <button class="btn-change-cat" data-category="productive" style="flex:1; padding:4px 2px; font-size:9px; font-weight:600; cursor:pointer; border-radius:4px; ${getBtnStyle(classification === 'productive', '#16a34a')}">Prod</button>
+                        <button class="btn-change-cat" data-category="unproductive" style="flex:1; padding:4px 2px; font-size:9px; font-weight:600; cursor:pointer; border-radius:4px; ${getBtnStyle(classification === 'unproductive', '#dc2626')}">Unprod</button>
+                        <button class="btn-change-cat" data-category="depends" style="flex:1; padding:4px 2px; font-size:9px; font-weight:600; cursor:pointer; border-radius:4px; ${getBtnStyle(classification === 'depends', '#fb923c')}">Depends</button>
+                        <button class="btn-change-cat" data-category="remove" style="flex:1; padding:4px 2px; font-size:9px; font-weight:600; cursor:pointer; border-radius:4px; background:transparent; color:#94a3b8; border:1px solid rgba(148,163,184,0.2);">Remove</button>
+                    </div>
+                </div>
             `;
         }
-        classificationDiv.innerHTML = html;
+
+        classificationDiv.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <span style="font-weight:600; color:#e5e7eb; word-break:break-all; margin-right:8px;">${domain}</span>
+                ${badgeHtml}
+            </div>
+            ${detailHtml}
+            ${blockCreatorHtml}
+            ${controlsHtml}
+        `;
+
+        // Wire event listeners for category selection
+        classificationDiv.querySelectorAll('.btn-select-cat, .btn-change-cat').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetCategory = btn.dataset.category;
+                chrome.storage.local.get({ domainClassifications: {} }, ({ domainClassifications }) => {
+                    const updated = { ...domainClassifications };
+                    if (targetCategory === 'remove') {
+                        delete updated[domain];
+                    } else {
+                        updated[domain] = targetCategory;
+                    }
+                    chrome.storage.local.set({ domainClassifications: updated }, () => {
+                        // Notify background worker to immediately reevaluate this tab
+                        chrome.runtime.sendMessage({ type: 'reEvaluateTab', tabId }, () => {
+                            // Redraw UI
+                            loadClassification();
+                        });
+                    });
+                });
+            });
+        });
+
+        // Wire block creator button
+        const blockCreatorBtn = classificationDiv.querySelector('.btn-block-creator');
+        if (blockCreatorBtn) {
+            blockCreatorBtn.addEventListener('click', () => {
+                const action = blockCreatorBtn.dataset.action;
+                const key = blockCreatorBtn.dataset.key;
+                if (action === 'block') {
+                    chrome.runtime.sendMessage({ type: 'addToBlocklist', key }, () => {
+                        chrome.runtime.sendMessage({ type: 'reEvaluateTab', tabId }, () => {
+                            loadClassification();
+                        });
+                    });
+                } else {
+                    chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key }, () => {
+                        chrome.runtime.sendMessage({ type: 'reEvaluateTab', tabId }, () => {
+                            loadClassification();
+                        });
+                    });
+                }
+            });
+        }
     }
 
-    function getActiveTabClassification() {
+    function loadClassification() {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                const currentTabId = tabs[0].id;
-                chrome.runtime.sendMessage({ type: 'getClassification', tabId: currentTabId }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error(chrome.runtime.lastError.message);
-                        classificationDiv.innerHTML = 'Could not get classification from background script.';
-                    } else {
-                        console.log('Received classification for current page:', response);
-                        renderClassification(response);
-                    }
-                });
-            } else {
-                 classificationDiv.innerHTML = 'Could not identify the active tab.';
+            if (!tabs[0]) return;
+            const tabId = tabs[0].id;
+            const url = tabs[0].url;
+            if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                classificationDiv.innerHTML = '<span style="color:#64748b;font-style:italic;">No classification available for this page.</span>';
+                return;
             }
+
+            chrome.storage.local.get(['domainClassifications', 'tempWhitelist', 'blocklist'], ({ domainClassifications, tempWhitelist, blocklist }) => {
+                const domain = getDomain(url);
+                const classification = getDomainClassification(url, domainClassifications);
+                currentBlocklist = blocklist || [];
+
+                chrome.runtime.sendMessage({ type: 'getClassification', tabId }, (sessionResult) => {
+                    renderClassificationUI(domain, url, tabId, classification, sessionResult, tempWhitelist || {});
+                });
+            });
         });
     }
+    loadClassification();
 
-    // --- Settings ---
-    const groqApiKeyInput = document.getElementById('groqApiKey');
-    const youtubeApiKeyInput = document.getElementById('youtubeApiKey');
-    const productiveContentInput = document.getElementById('productiveContent');
-    const unwantedContentInput = document.getElementById('unwantedContent');
-    const saveSettingsButton = document.getElementById('saveSettings');
-    const statusDiv = document.getElementById('status');
+    // --- Blocklist ---
+    const blocklistItems  = document.getElementById('blocklistItems');
+    const blocklistSearch = document.getElementById('blocklistSearch');
 
-    chrome.storage.local.get(['groqApiKey', 'youtubeApiKey', 'productiveContent', 'unwantedContent'], (result) => {
-        if (result.groqApiKey) groqApiKeyInput.value = result.groqApiKey;
-        if (result.youtubeApiKey) youtubeApiKeyInput.value = result.youtubeApiKey;
-        if (result.productiveContent) {
-            productiveContentInput.value = result.productiveContent;
-            originalProductiveContent = result.productiveContent;
-        }
-        if (result.unwantedContent) {
-            unwantedContentInput.value = result.unwantedContent;
-            originalUnwantedContent = result.unwantedContent;
-        }
-    });
-
-    saveSettingsButton.addEventListener('click', () => {
-        const groqApiKey = groqApiKeyInput.value.trim();
-        const youtubeApiKey = youtubeApiKeyInput.value.trim();
-        const productiveContent = productiveContentInput.value.trim();
-        const unwantedContent = unwantedContentInput.value.trim();
-
-        if (!groqApiKey) {
-            statusDiv.textContent = 'GROQ API Key is required.';
-            return;
-        }
-
-        chrome.storage.local.set({ groqApiKey, youtubeApiKey, productiveContent, unwantedContent }, () => {
-            statusDiv.textContent = 'Settings saved successfully!';
-            const contentChanged = productiveContent !== originalProductiveContent || unwantedContent !== originalUnwantedContent;
-            if (contentChanged) {
-                chrome.runtime.sendMessage({ type: 'generateInstructions', userBio: { productive: productiveContent, unwanted: unwantedContent }, groqApiKey: groqApiKey }, (response) => {
-                    if (response && response.success) {
-                        console.log('User instructions are being generated in the background.');
-                        originalProductiveContent = productiveContent;
-                        originalUnwantedContent = unwantedContent;
-                    } else {
-                        console.error('Failed to send message to generate instructions.');
-                    }
-                });
-            }
-            setTimeout(() => { statusDiv.textContent = ''; }, 3000);
-        });
-    });
-
-    // --- Blocklist Display ---
-    function renderBlocklist(list) {
-        if (!classificationsList) return;
-        classificationsList.innerHTML = '';
-        if (!list || list.length === 0) {
-            classificationsList.innerHTML = '<li>Nothing blocked yet.</li>';
+    function renderBlocklist() {
+        const query = (blocklistSearch.value || '').toLowerCase().trim();
+        let list = currentBlocklist.slice().reverse();
+        if (query) list = list.filter(k => k.toLowerCase().includes(query));
+        blocklistItems.innerHTML = '';
+        if (list.length === 0) {
+            blocklistItems.innerHTML = '<li class="empty-state">Nothing blocked yet.</li>';
             return;
         }
         list.forEach(key => {
             const li = document.createElement('li');
-            li.textContent = key;
-            const removeButton = document.createElement('button');
-            removeButton.textContent = 'Remove';
-            removeButton.style.marginLeft = '10px';
-            removeButton.addEventListener('click', () => {
-                chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key: key });
-            });
-            li.appendChild(removeButton);
-            classificationsList.appendChild(li);
+            const span = document.createElement('span');
+            span.textContent = key;
+            li.appendChild(span);
+            
+            const btn = document.createElement('button');
+            btn.textContent = 'remove';
+            btn.addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'removeFromBlocklist', key }); });
+            li.appendChild(btn);
+            blocklistItems.appendChild(li);
         });
     }
 
-    chrome.storage.local.get({blocklist: []}, (result) => renderBlocklist(result.blocklist));
+    chrome.storage.local.get({ blocklist: [] }, ({ blocklist }) => {
+        currentBlocklist = blocklist;
+        renderBlocklist();
+    });
 
-    // --- Listen for all storage changes ---
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && changes.blocklist) {
-            console.log('Blocklist changed, re-rendering.');
-            renderBlocklist(changes.blocklist.newValue);
+    blocklistSearch.addEventListener('input', renderBlocklist);
+
+    // --- Open Settings ---
+    document.getElementById('openOptions').addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+    });
+
+    // --- Active Timers Render ---
+    const activeTimersSection = document.getElementById('activeTimersSection');
+    const activeTimersList = document.getElementById('activeTimersList');
+
+    function formatTimeRemaining(secs) {
+        if (secs <= 0) return '00:00';
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function urlMatchesStrictRule(url, rule) {
+        if (!url || !rule) return false;
+        const trimmed = rule.trim();
+        if (!trimmed) return false;
+        try {
+            const current = new URL(url);
+            if (/^https?:\/\//i.test(trimmed)) return url.startsWith(trimmed);
+            const lowerRule = trimmed.toLowerCase();
+            const firstSlash = lowerRule.indexOf('/');
+            if (firstSlash === -1) {
+                const host = current.hostname.toLowerCase();
+                return host === lowerRule || host.endsWith('.' + lowerRule);
+            }
+            const hostPart = lowerRule.slice(0, firstSlash);
+            const pathPart = lowerRule.slice(firstSlash);
+            const host = current.hostname.toLowerCase();
+            return (host === hostPart || host.endsWith('.' + hostPart)) && current.pathname.startsWith(pathPart);
+        } catch (e) { return url.startsWith(trimmed); }
+    }
+
+    function urlMatchesHomepageRule(url, rule) {
+        if (!url || !rule) return false;
+        try {
+            const parsedUrl = new URL(url);
+            const host = parsedUrl.hostname.toLowerCase();
+            const path = parsedUrl.pathname.toLowerCase().replace(/\/$/, '');
+            
+            let cleanRule = rule.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
+            
+            if (cleanRule.includes('/')) {
+                const firstSlash = cleanRule.indexOf('/');
+                const ruleHost = cleanRule.substring(0, firstSlash);
+                const rulePath = cleanRule.substring(firstSlash).replace(/\/$/, '');
+                
+                const hostMatch = host === ruleHost || host.endsWith('.' + ruleHost);
+                if (!hostMatch) return false;
+                
+                return path === rulePath || path.startsWith(rulePath + '/');
+            } else {
+                const hostMatch = host === cleanRule || host.endsWith('.' + cleanRule);
+                if (!hostMatch) return false;
+                
+                if (path === '' || path === '/') return true;
+                
+                const commonHomePaths = [
+                    '/feed', '/home', '/feed/', '/home/', '/index.html', '/index.php'
+                ];
+                return commonHomePaths.includes(path);
+            }
+        } catch (e) { return false; }
+    }
+    function homepageRuleMatchesItem(url, item) {
+        if (item && Array.isArray(item.domains)) {
+            const matchesDomain = item.domains.some(d => urlMatchesHomepageRule(url, d));
+            if (matchesDomain) {
+                if (Array.isArray(item.excludedDomains)) {
+                    const isExcluded = item.excludedDomains.some(ed => urlMatchesHomepageRule(url, ed));
+                    if (isExcluded) return false;
+                }
+                return true;
+            }
+            return false;
         }
-        if (namespace === 'session') {
-            getActiveTabClassification(); // Re-check classification if session data changes
+        return item ? urlMatchesHomepageRule(url, item.domain) : false;
+    }
+
+    function strictRuleMatchesItem(url, item) {
+        if (item && Array.isArray(item.urls)) {
+            const matchesUrl = item.urls.some(u => urlMatchesStrictRule(url, u));
+            if (matchesUrl) {
+                if (Array.isArray(item.excludedUrls)) {
+                    const isExcluded = item.excludedUrls.some(eu => urlMatchesStrictRule(url, eu));
+                    if (isExcluded) return false;
+                }
+                return true;
+            }
+            return false;
+        }
+        return item ? urlMatchesStrictRule(url, item.url) : false;
+    }
+    function findTimerForDomain(domain, timers) {
+        if (!domain) return 'web';
+        for (const key of Object.keys(timers)) {
+            if (key === 'web' || key === 'overall') continue;
+            const timer = timers[key];
+            if (Array.isArray(timer.domains)) {
+                for (const d of timer.domains) {
+                    if (domain === d || domain.endsWith('.' + d)) {
+                        if (Array.isArray(timer.excludedDomains)) {
+                            const isExcluded = timer.excludedDomains.some(ed => domain === ed || domain.endsWith('.' + ed));
+                            if (isExcluded) continue;
+                        }
+                        return timer.id;
+                    }
+                }
+            }
+        }
+        const webTimer = timers['web'];
+        if (webTimer) {
+            if (Array.isArray(webTimer.excludedDomains)) {
+                const isExcluded = webTimer.excludedDomains.some(ed => domain === ed || domain.endsWith('.' + ed));
+                if (isExcluded) return null;
+            }
+            return 'web';
+        }
+        return null;
+    }
+
+    function updatePopupTimers() {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (!tabs[0]) return;
+            const tabId = tabs[0].id;
+            const url = tabs[0].url;
+            if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                activeTimersSection.style.display = 'none';
+                return;
+            }
+
+            chrome.storage.local.get([
+                'domainClassifications',
+                'unproductiveTimers',
+                'homepageBlocklist',
+                'strictUrlBlocklist'
+            ], (localData) => {
+                chrome.storage.session.get([
+                    tabId.toString(),
+                    'activeSession',
+                    'unproductiveSession'
+                ], (sessionData) => {
+                    const sessionResult = sessionData[tabId];
+                    const domainClassifications = localData.domainClassifications || {};
+                    const unproductiveTimers = localData.unproductiveTimers || {};
+                    const homepageBlocklist = localData.homepageBlocklist || [];
+                    const strictUrlBlocklist = localData.strictUrlBlocklist || [];
+                    
+                    const activeSession = sessionData.activeSession;
+                    const unproductiveSession = sessionData.unproductiveSession;
+
+                    // Match all applicable timers
+                    const matched = [];
+                    const domain = getDomain(url);
+                    if (!domain) {
+                        activeTimersSection.style.display = 'none';
+                        return;
+                    }
+
+                    // 1. Strict URL timers
+                    if (Array.isArray(strictUrlBlocklist)) {
+                        const strict = strictUrlBlocklist.find(item => strictRuleMatchesItem(url, item) && item.limitMinutes >= 0);
+                        if (strict) {
+                            matched.push({
+                                type: 'strict',
+                                name: strict.name || 'Blocklist Timer',
+                                subText: Array.isArray(strict.urls) ? strict.urls.join(', ') : strict.url,
+                                limitMinutes: strict.limitMinutes,
+                                secondsUsedToday: strict.secondsUsedToday
+                            });
+                        }
+                    }
+
+                    // 2. Homepage timers
+                    if (Array.isArray(homepageBlocklist)) {
+                        const home = homepageBlocklist.find(item => homepageRuleMatchesItem(url, item) && item.limitMinutes >= 0);
+                        if (home) {
+                            matched.push({
+                                type: 'homepage',
+                                name: home.name || 'Homepage Timer',
+                                subText: Array.isArray(home.domains) ? home.domains.join(', ') : home.domain,
+                                limitMinutes: home.limitMinutes,
+                                secondsUsedToday: home.secondsUsedToday
+                            });
+                        }
+                    }
+
+                    // 3. Content timers
+                    const classification = getDomainClassification(url, domainClassifications);
+                    let contentTimerApplies = false;
+                    if (classification === 'unproductive') {
+                        contentTimerApplies = true;
+                    } else if (classification === 'depends' && sessionResult && sessionResult.entertainment) {
+                        contentTimerApplies = true;
+                    }
+
+                    if (contentTimerApplies && unproductiveTimers) {
+                        const timerId = findTimerForDomain(domain, unproductiveTimers);
+                        if (timerId && unproductiveTimers[timerId] && unproductiveTimers[timerId].limitMinutes >= 0) {
+                            const timer = unproductiveTimers[timerId];
+                            matched.push({
+                                type: 'content',
+                                name: `${timer.name} Content`,
+                                subText: timer.domains ? timer.domains.join(', ') : '',
+                                limitMinutes: timer.limitMinutes,
+                                secondsUsedToday: timer.secondsUsedToday
+                            });
+                        }
+                        if (unproductiveTimers.overall && unproductiveTimers.overall.limitMinutes >= 0) {
+                            const overall = unproductiveTimers.overall;
+                            matched.push({
+                                type: 'overall',
+                                name: 'Overall Limit',
+                                subText: 'Sum of all content timers',
+                                limitMinutes: overall.limitMinutes,
+                                secondsUsedToday: overall.secondsUsedToday
+                            });
+                        }
+                    }
+
+                    if (matched.length === 0) {
+                        activeTimersSection.style.display = 'none';
+                        return;
+                    }
+
+                    // Calculate elapsed real-time seconds
+                    const elapsedActive = (activeSession && activeSession.tabId === tabId)
+                        ? Math.max(0, Math.floor((Date.now() - activeSession.startTime) / 1000))
+                        : 0;
+
+                    const elapsedUnproductive = (unproductiveSession && unproductiveSession.tabId === tabId)
+                        ? Math.max(0, Math.floor((Date.now() - unproductiveSession.startTime) / 1000))
+                        : 0;
+
+                    activeTimersSection.style.display = 'block';
+                    activeTimersList.innerHTML = '';
+
+                    matched.forEach(timer => {
+                        let used = timer.secondsUsedToday;
+                        if (timer.type === 'strict' || timer.type === 'homepage') {
+                            used += elapsedActive;
+                        } else if (timer.type === 'content' || timer.type === 'overall') {
+                            used += elapsedUnproductive;
+                        }
+
+                        const total = timer.limitMinutes * 60;
+                        const remaining = Math.max(0, total - used);
+                        const pct = (remaining / total) * 100;
+                        const circum = 100.53;
+                        const offset = circum - (pct / 100) * circum;
+
+                        // Warn color if remaining is <= 2 minutes (120 seconds)
+                        const color = remaining <= 120 ? '#EF5350' : '#FF4081';
+
+                        const div = document.createElement('div');
+                        div.className = 'timer-container';
+                        div.innerHTML = `
+                            <div class="timer-circle-box">
+                                <svg width="36" height="36" viewBox="0 0 36 36">
+                                    <circle class="timer-circle-bg" cx="18" cy="18" r="16"></circle>
+                                    <circle class="timer-circle-progress" cx="18" cy="18" r="16"
+                                        style="stroke-dasharray:${circum}; stroke-dashoffset:${offset.toFixed(2)}; stroke:${color};"></circle>
+                                </svg>
+                            </div>
+                            <div class="timer-info">
+                                <span class="timer-label" style="color:${color};">${timer.name}</span>
+                                <span style="font-size:10px; color:#64748b; font-weight:500;">${timer.subText || ''}</span>
+                            </div>
+                            <span class="timer-value">${formatTimeRemaining(remaining)}</span>
+                        `;
+                        activeTimersList.appendChild(div);
+                    });
+                });
+            });
+        });
+    }
+
+    updatePopupTimers();
+    const timerIntervalId = setInterval(updatePopupTimers, 1000);
+
+    chrome.storage.onChanged.addListener((changes, ns) => {
+        if (ns === 'local') {
+            if (changes.blocklist) {
+                currentBlocklist = changes.blocklist.newValue || [];
+                renderBlocklist();
+                loadClassification();
+            }
+            if (changes.pendingDiscovery) loadDiscovery();
+            if (changes.domainClassifications) loadClassification();
+            if (changes.unproductiveTimers || changes.homepageBlocklist || changes.strictUrlBlocklist) {
+                updatePopupTimers();
+            }
+        }
+        if (ns === 'session') {
+            loadClassification();
+            updatePopupTimers();
         }
     });
 
-    // --- Initial Load ---
-    getActiveTabClassification();
+    lucide.createIcons();
 });

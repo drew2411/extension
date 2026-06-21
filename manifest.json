@@ -1,30 +1,49 @@
 {
   "manifest_version": 3,
-  "name": "Content Classifier",
-  "version": "1.0",
-  "description": "Classifies YouTube and Reddit content as entertainment and blocks it if necessary.",
+  "name": "Custom Content Blocker: Improve Productivity",
+  "version": "4.0",
+  "description": "Block custom content on any site using AI intent detection. Features website & group timers, plus creator blocks. Groq API required.",
   "permissions": [
     "storage",
     "tabs",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "alarms"
   ],
   "host_permissions": [
-    "https://*.youtube.com/*",
-    "https://*.reddit.com/*"
+    "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Content Classifier"
+    "default_title": "Selective Content Blocker"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["https://www.reddit.com/r/*"],
       "js": ["reddit.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube.js"],
+      "run_at": "document_idle"
     }
-  ]
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["options.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "logo_16.png",
+    "32": "logo_32.png",
+    "48": "logo_48.png",
+    "128": "logo_128.png"
+  }
 }

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" charset="UTF-8" content="width=device-width, initial-scale=1.0">
+    <title>Focus — Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
+    <script src="lucide.min.js"></script>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Quicksand',sans-serif;font-weight:400;background:radial-gradient(circle at top left,#020617 0,#000 65%);color:#e5e7eb;line-height:1.5;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:24px 32px}
+        .container{display:flex;background:#1A1C30;border-radius:18px;box-shadow:0 22px 48px rgba(15,23,42,0.85);border:1px solid rgba(148,163,184,0.2);width:100%;max-width:1100px;min-height:calc(100vh - 48px);overflow:hidden}
+        .sidebar{width:220px;background:rgba(15,23,42,0.4);border-right:1px solid rgba(148,163,184,0.1);padding:24px 0;display:flex;flex-direction:column;flex-shrink:0}
+        .sidebar-header{padding:0 20px 18px;border-bottom:1px solid rgba(148,163,184,0.1);margin-bottom:16px}
+        .sidebar-header h2{font-size:16px;font-weight:700;color:#FF4081;letter-spacing:0.05em}
+        .sidebar-header small{font-size:10px;color:#64748b}
+        .menu-item{padding:11px 20px;cursor:pointer;font-size:13px;font-weight:500;color:#94a3b8;transition:all 0.2s;display:flex;align-items:center;gap:10px;border-left:3px solid transparent}
+        .menu-item:hover{background:rgba(255,64,129,0.05);color:#e5e7eb}
+        .menu-item.active{background:rgba(255,64,129,0.1);color:#fff;border-left-color:#FF4081;font-weight:600}
+        /* Lucide Icons — target the rendered SVG class */
+        .lucide {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            color: #fff;
+            flex-shrink: 0;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .menu-item .lucide { color: #94a3b8; }
+        .menu-item.active .lucide, .menu-item:hover .lucide { color: #fff; }
+        .title-productive .lucide { color: #4ade80; }
+        .title-unproductive .lucide { color: #fb7185; }
+        .content-area{flex:1;padding:28px;overflow-y:auto;min-height:0}
+        .tab-section{display:none}
+        .tab-section.active{display:block;animation:fadeIn 0.25s ease}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        h3{font-size:20px;font-weight:700;color:#fff;margin-bottom:4px}
+        .subtitle{font-size:12px;color:#64748b;margin-bottom:20px}
+        .menu-item{display:flex;align-items:center;gap:10px;}
+        h4{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin:22px 0 8px;display:flex;align-items:center;gap:8px;}
+        .col-heading{display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:8px 12px;border-radius:8px;margin-bottom:10px;justify-content:center;}
+        label{font-size:13px;color:#94a3b8}
+        input[type=text],input[type=number]{width:100%;padding:9px 12px;border-radius:8px;border:1px solid rgba(148,163,184,0.25);background:rgba(15,23,42,0.6);color:#e5e7eb;font-family:inherit;font-size:13px;outline:none;transition:border-color 0.2s}
+        input[type=text]:focus,input[type=number]:focus{border-color:#FF4081}
+        small{display:block;margin-top:5px;font-size:11px;color:#64748b;line-height:1.4}
+        button{padding:8px 16px;cursor:pointer;border-radius:6px;border:none;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;background:#FF4081;color:#fff;box-shadow:0 4px 12px rgba(255,64,129,0.2);transition:all 0.2s}
+        button:hover{background:#F81F66;transform:translateY(-1px);box-shadow:0 6px 16px rgba(255,64,129,0.3)}
+        button:active{transform:scale(0.98)}
+        /* Segmented */
+        .seg-ctrl{display:flex;background:rgba(15,23,42,0.8);border-radius:8px;padding:3px;margin-top:10px}
+        .seg-ctrl input[type=radio]{display:none}
+        .seg-ctrl .seg-opt{flex:1;padding:9px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;border-radius:6px;color:#94a3b8;transition:all 0.2s}
+        .seg-ctrl input:checked+.seg-opt{background:#fff;color:#1A1C30}
+        /* Lists */
+        ul{list-style:none;padding:0;margin-top:10px}
+        ul li{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(15,23,42,0.3);border-radius:6px;margin-bottom:6px;font-size:13px;border:1px solid rgba(148,163,184,0.1)}
+        ul li button{margin:0;padding:3px 8px;font-size:11px;background:transparent;color:#64748b;box-shadow:none;text-transform:lowercase}
+        ul li button:hover{color:#FF4081;background:transparent;box-shadow:none;transform:none}
+        /* Usage bar */
+        .usage-row{display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:4px}
+        .usage-track{height:5px;background:rgba(15,23,42,0.5);border-radius:3px;overflow:hidden;margin-bottom:12px}
+        .usage-fill{height:100%;border-radius:3px;transition:width 0.4s}
+        /* Homepage row */
+        .home-row{display:flex;justify-content:space-between;align-items:center;background:rgba(15,23,42,0.3);padding:12px 14px;border-radius:10px;border:1px solid rgba(148,163,184,0.1);margin-bottom:12px}
+        .home-row-right{display:flex;align-items:center;gap:8px}
+        .home-row input[type=number]{width:70px;margin:0;padding:6px 10px}
+        /* Intent cells */
+        .intents-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+        .intents-column h4{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:8px 12px;border-radius:8px;margin-bottom:10px;text-align:center;margin-top:0}
+        .col-productive h4{background:rgba(34,197,94,0.1);color:#22c55e}
+        .col-unproductive h4{background:rgba(239,68,68,0.1);color:#EF5350}
+        .cell-list{display:flex;flex-direction:column;gap:8px;min-height:60px}
+        .cell{background:rgba(15,23,42,0.4);border:1px solid rgba(148,163,184,0.12);border-radius:10px;padding:12px;transition:border-color 0.2s}
+        .cell:hover{border-color:rgba(148,163,184,0.25)}
+        .cell-header{display:flex;justify-content:space-between;align-items:flex-start}
+        .cell-phrase{font-weight:700;font-size:13px;color:#e5e7eb}
+        .cell-remove{background:transparent;border:none;color:#64748b;cursor:pointer;font-size:16px;padding:0;margin:0;box-shadow:none;text-transform:none;line-height:1}
+        .cell-remove:hover{color:#EF5350;background:transparent;transform:none;box-shadow:none}
+        .cell-kw-count{font-size:10px;color:#64748b;margin-top:4px}
+        .cell-keywords{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+        .kw-tag{display:inline-flex;align-items:center;gap:4px;background:rgba(255,64,129,0.1);border:1px solid rgba(255,64,129,0.2);border-radius:20px;padding:2px 8px;font-size:10px;color:#FF4081}
+        .kw-tag button{background:transparent;border:none;color:#FF4081;cursor:pointer;font-size:10px;padding:0;margin:0;box-shadow:none;text-transform:none;opacity:0.6;min-width:unset}
+        .kw-tag button:hover{opacity:1;background:transparent;transform:none;box-shadow:none}
+        .shadow-label{font-size:10px;color:#64748b;margin-top:4px;font-style:italic;}
+        .alt-id-select{background:transparent;border:none;color:#42A5F5;font-size:10px;font-style:italic;cursor:pointer;outline:none;padding:0;margin-left:4px;text-decoration:underline;}
+        .alt-id-select option{background:#1A1C30;color:#e5e7eb;}
+        .clarification-box{background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.2);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;color:#fbbf24}
+        .clarification-box input{margin-top:6px;font-size:12px}
+        .clarification-box button{margin-top:8px;font-size:11px;padding:5px 12px}
+        .add-cell-row{display:flex;gap:6px;margin-top:10px}
+        .add-cell-row input{flex:1;font-size:12px;padding:7px 10px}
+        .add-cell-row button{white-space:nowrap;font-size:11px;padding:7px 12px;margin:0}
+        /* Advanced mode toggle */
+        .adv-toggle-row{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:8px}
+        .adv-toggle-label{font-size:11px;color:#64748b;font-weight:600}
+        .adv-toggle-desc{font-size:10px;color:#475569;font-style:italic;margin-right:auto;}
+        .switch{position:relative;display:inline-block;width:36px;height:20px}
+        .switch input{opacity:0;width:0;height:0}
+        .slider-s{position:absolute;inset:0;background:#374151;border-radius:20px;transition:background 0.3s;cursor:pointer}
+        .slider-s:before{content:'';position:absolute;width:14px;height:14px;left:3px;bottom:3px;background:#9ca3af;border-radius:50%;transition:0.3s}
+        .switch input:checked+.slider-s{background:#FF4081}
+        .switch input:checked+.slider-s:before{transform:translateX(16px);background:#fff}
+        /* Reports */
+        .stats-row{display:flex;gap:12px;margin-bottom:20px}
+        .stat-card{flex:1;background:rgba(15,23,42,0.5);border:1px solid rgba(148,163,184,0.1);border-radius:10px;padding:14px;text-align:center}
+        .stat-value{font-size:22px;font-weight:700;color:#fff;margin-bottom:3px}
+        .stat-label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#64748b}
+        .chart-section{margin-bottom:22px}
+        .bar-chart{display:flex;flex-direction:column;gap:7px}
+        .bar-row{display:flex;align-items:center;gap:10px}
+        .bar-label{width:120px;font-size:11px;color:#e5e7eb;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+        .bar-track{flex:1;height:20px;background:rgba(15,23,42,0.5);border-radius:5px;overflow:hidden}
+        .bar-fill{height:100%;border-radius:5px;transition:width 0.5s}
+        .bar-time{width:55px;font-size:10px;color:#64748b;font-family:monospace;flex-shrink:0}
+        .weekly-chart{display:flex;align-items:flex-end;gap:7px;height:130px;padding:0 4px}
+        .weekly-bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end}
+        .weekly-bar-fill{width:100%;border-radius:6px 6px 0 0;transition:height 0.5s;min-height:2px}
+        .weekly-bar-label{font-size:9px;color:#64748b;text-transform:uppercase}
+        .weekly-bar-value{font-size:9px;color:#e5e7eb;font-family:monospace}
+        .site-table{width:100%;border-collapse:collapse;font-size:11px}
+        .site-table th{text-align:left;padding:7px 10px;color:#64748b;text-transform:uppercase;font-size:9px;letter-spacing:0.06em;border-bottom:1px solid rgba(148,163,184,0.15)}
+        .site-table td{padding:7px 10px;color:#e5e7eb;border-bottom:1px solid rgba(148,163,184,0.06)}
+        .site-table td:not(:first-child){font-family:monospace;text-align:right}
+        .empty-state{text-align:center;padding:40px 20px;color:#64748b;font-size:13px}
+        .clear-btn{background:transparent!important;color:#64748b!important;border:1px solid rgba(148,163,184,0.3)!important;box-shadow:none!important;font-size:11px!important;margin-top:14px}
+        .clear-btn:hover{color:#FF4081!important;border-color:#FF4081!important;background:transparent!important;box-shadow:none!important}
+        ::-webkit-scrollbar{width:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.2);border-radius:10px}
+        .status-msg{font-size:12px;color:#22c55e;margin-top:8px;min-height:18px}
+        /* Timer circle */
+        .timer-container{display:flex;align-items:center;gap:10px;margin-top:6px;background:rgba(15,23,42,0.4);padding:8px 12px;border-radius:8px}
+        .timer-circle-box{position:relative;width:36px;height:36px;flex-shrink:0}
+        .timer-circle-box svg{transform:rotate(-90deg)}
+        .timer-circle-bg{fill:none;stroke:rgba(148,163,184,0.1);stroke-width:3}
+        .timer-circle-progress{fill:none;stroke:#FF4081;stroke-width:3;stroke-linecap:round;stroke-dasharray:100.53;stroke-dashoffset:100.53;transition:stroke-dashoffset 0.5s}
+        .timer-info{display:flex;flex-direction:column}
+        .timer-label{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8}
+        .timer-value{font-family:monospace;font-size:13px;font-weight:600;color:#fff}
+    </style>
+</head>
+<body>
+<div class="container">
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2>FOCUS</h2>
+            <small>Settings v4.0</small>
+        </div>
+        <div class="menu-item active" data-tab="intents"><i data-lucide="target"></i>Intents</div>
+        <div class="menu-item" data-tab="blocking"><i data-lucide="shield-alert"></i>Blocking</div>
+        <div class="menu-item" data-tab="timers"><i data-lucide="timer"></i>Timers</div>
+        <div class="menu-item" data-tab="classifications"><i data-lucide="globe"></i>Websites</div>
+        <div class="menu-item" data-tab="reports"><i data-lucide="bar-chart-3"></i>Reports</div>
+        <div class="menu-item" data-tab="settings"><i data-lucide="settings"></i>Settings</div>
+    </nav>
+
+    <main class="content-area">
+        <!-- INTENTS TAB -->
+        <section class="tab-section active" id="tab-intents">
+            <h3>Intents Dashboard</h3>
+            <p class="subtitle">Define what you consider productive or unproductive. The AI will generate targeting keywords.</p>
+
+            <div class="adv-toggle-row">
+                <span class="adv-toggle-desc">Intents auto-save after AI generates keywords.</span>
+                <span class="adv-toggle-label" title="Reveals and lets you edit the raw AI-generated keywords inside each intent card">Advanced Mode</span>
+                <label class="switch"><input type="checkbox" id="advancedModeToggle"><span class="slider-s"></span></label>
+            </div>
+
+            <div class="intents-grid">
+                <div class="intents-column col-productive">
+                    <div class="col-heading col-productive title-productive"><i data-lucide="check-circle-2"></i> Productive</div>
+                    <div class="cell-list" id="productiveList"></div>
+                    <div class="add-cell-row">
+                        <input type="text" id="addProductiveInput" placeholder="e.g. Machine Learning">
+                        <button id="addProductiveBtn">+ Add</button>
+                    </div>
+                </div>
+                <div class="intents-column col-unproductive">
+                    <div class="col-heading col-unproductive title-unproductive"><i data-lucide="ban"></i> Unproductive</div>
+                    <div class="cell-list" id="unproductiveList"></div>
+                    <div class="add-cell-row">
+                        <input type="text" id="addUnproductiveInput" placeholder="e.g. NBA highlights">
+                        <button id="addUnproductiveBtn">+ Add</button>
+                    </div>
+                </div>
+            </div>
+            <p id="intentStatus" class="status-msg"></p>
+        </section>
+
+        <!-- BLOCKING TAB -->
+        <section class="tab-section" id="tab-blocking">
+            <h3>Blocking</h3>
+            <p class="subtitle">Homepage timers, website blocklists, and always-blocked URLs.</p>
+
+            <h4>Homepage Timers</h4>
+            <small style="margin-bottom:12px;">Controls how long you can spend on the <b>front page</b> of websites (not video or post pages — those are controlled by Content Timers). Set -1 to disable, 0 to always block, or a positive number for a daily minute limit.</small>
+
+            <div id="homepageListContainer" style="display:flex; flex-direction:column; gap:14px; margin-bottom:20px;"></div>
+
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-bottom:24px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="plus-circle" style="width:16px; height:16px; color:#FF4081;"></i>Add Custom Homepage Limit</h4>
+                
+                <div class="seg-ctrl" style="margin-top: 0; margin-bottom: 12px; width: 100%;">
+                    <input type="radio" id="type-website-homepage" name="type-homepage" value="website" checked>
+                    <label for="type-website-homepage" class="seg-opt">Website</label>
+                    <input type="radio" id="type-group-homepage" name="type-homepage" value="group">
+                    <label for="type-group-homepage" class="seg-opt">Group</label>
+                </div>
+
+                <!-- Website Fields -->
+                <div id="homepage-website-fields" style="display:flex; flex-direction:column; gap:8px;">
+                    <input type="text" id="newHomepageDomain" placeholder="e.g. twitter.com">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="newHomepageLimit" min="-1" placeholder="Daily Limit (Minutes, e.g. 15)" style="flex:1;">
+                        <button id="addHomepageBtn" style="margin:0; padding:8px 16px;">Add Homepage</button>
+                    </div>
+                </div>
+
+                <!-- Group Fields -->
+                <div id="homepage-group-fields" style="display:none; flex-direction:column; gap:8px;">
+                    <input type="text" id="newHomepageGroupName" placeholder="Group Name (e.g. Social Media)">
+                    <input type="text" id="newHomepageGroupDomains" placeholder="Domains, comma separated (e.g. twitter.com, instagram.com)">
+                    <input type="text" id="newHomepageGroupExclusions" placeholder="Excluded Domains, comma separated (optional)">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="newHomepageGroupLimit" min="-1" placeholder="Daily Limit (Minutes, e.g. 15)" style="flex:1;">
+                        <button id="addHomepageGroupBtn" style="margin:0; padding:8px 16px;">Add Group</button>
+                    </div>
+                </div>
+                <p id="newHomepageStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+
+            <h4>Website Blocklist</h4>
+            <small>URL prefixes with optional daily time limits. -1 = no limit, 0 = always block.</small>
+            
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-top:10px; margin-bottom:12px;">
+                <div class="seg-ctrl" style="margin-top: 0; margin-bottom: 12px; width: 100%;">
+                    <input type="radio" id="type-website-strict" name="type-strict" value="website" checked>
+                    <label for="type-website-strict" class="seg-opt">Website</label>
+                    <input type="radio" id="type-group-strict" name="type-strict" value="group">
+                    <label for="type-group-strict" class="seg-opt">Group</label>
+                </div>
+
+                <!-- Website Fields -->
+                <div id="strict-website-fields" style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="strictUrlInput" placeholder="e.g. twitter.com/explore" style="flex:2;">
+                        <input type="number" id="strictUrlLimit" min="-1" placeholder="Min" style="flex:1;">
+                    </div>
+                    <button id="addStrictUrl" style="width:100%; margin-top:4px;">Add Site with Limit</button>
+                </div>
+
+                <!-- Group Fields -->
+                <div id="strict-group-fields" style="display:none; flex-direction:column; gap:8px;">
+                    <input type="text" id="strictUrlGroupName" placeholder="Group Name (e.g. Work Block)">
+                    <input type="text" id="strictUrlGroupUrls" placeholder="URL prefixes, comma separated (e.g. reddit.com/r/funny, youtube.com/watch)">
+                    <input type="text" id="strictUrlGroupExclusions" placeholder="Excluded URLs, comma separated (optional)">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="strictUrlGroupLimit" min="-1" placeholder="Daily Limit (Minutes)" style="flex:1;">
+                        <button id="addStrictUrlGroupBtn" style="margin:0; padding:8px 16px;">Add Group</button>
+                    </div>
+                </div>
+                <p id="newStrictStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+            
+            <ul id="strictUrlList"></ul>
+
+            <h4>Always-Blocked URLs</h4>
+            <small>Exact URLs — blocked immediately, no timer.</small>
+            
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-top:10px; margin-bottom:12px;">
+                <div class="seg-ctrl" style="margin-top: 0; margin-bottom: 12px; width: 100%;">
+                    <input type="radio" id="type-website-exact" name="type-exact" value="website" checked>
+                    <label for="type-website-exact" class="seg-opt">Website</label>
+                    <input type="radio" id="type-group-exact" name="type-exact" value="group">
+                    <label for="type-group-exact" class="seg-opt">Group</label>
+                </div>
+
+                <!-- Website Fields -->
+                <div id="exact-website-fields" style="display:flex; gap:8px;">
+                    <input type="text" id="exactUrlInput" placeholder="https://example.com" style="flex:1;">
+                    <button id="addExactUrl" style="margin:0;">Add</button>
+                </div>
+
+                <!-- Group Fields -->
+                <div id="exact-group-fields" style="display:none; flex-direction:column; gap:8px;">
+                    <input type="text" id="exactUrlGroupName" placeholder="Group Name (e.g. Blocked Hubs)">
+                    <input type="text" id="exactUrlGroupUrls" placeholder="Exact URLs, comma separated (e.g. https://site1.com, https://site2.com)">
+                    <input type="text" id="exactUrlGroupExclusions" placeholder="Excluded Exact URLs, comma separated (optional)">
+                    <button id="addExactUrlGroupBtn" style="width:100%;">Add Group</button>
+                </div>
+                <p id="newExactStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+            
+            <ul id="exactUrlList"></ul>
+        </section>
+
+        <!-- TIMERS TAB -->
+        <section class="tab-section" id="tab-timers">
+            <h3>Content Timers</h3>
+            <p class="subtitle">Daily limits for unproductive content on YouTube, Reddit, or other domains you choose.</p>
+            <small style="margin-bottom:20px;display:block;">-1 = no restriction &nbsp;·&nbsp; 0 = always block &nbsp;·&nbsp; >0 = daily minute limit</small>
+
+            <div id="timersListContainer" style="display:flex; flex-direction:column; gap:14px; margin-bottom:20px;"></div>
+
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-top:20px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="plus-circle" style="width:16px; height:16px; color:#FF4081;"></i>Add Custom Content Timer</h4>
+                
+                <div class="seg-ctrl" style="margin-top: 0; margin-bottom: 12px; width: 100%;">
+                    <input type="radio" id="type-website-content" name="type-content" value="website" checked>
+                    <label for="type-website-content" class="seg-opt">Website</label>
+                    <input type="radio" id="type-group-content" name="type-content" value="group">
+                    <label for="type-group-content" class="seg-opt">Group</label>
+                </div>
+
+                <!-- Website Fields -->
+                <div id="content-website-fields" style="display:flex; flex-direction:column; gap:8px;">
+                    <input type="text" id="newTimerDomain" placeholder="Domain (e.g. instagram.com)">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="newTimerDomainLimit" min="-1" placeholder="Daily Limit (Minutes, e.g. 15)" style="flex:1;">
+                        <button id="addCustomTimerDomainBtn" style="margin:0; padding:8px 16px;">Add Domain Timer</button>
+                    </div>
+                </div>
+
+                <!-- Group Fields -->
+                <div id="content-group-fields" style="display:none; flex-direction:column; gap:8px;">
+                    <input type="text" id="newTimerName" placeholder="Timer Name (e.g. Social Media)">
+                    <input type="text" id="newTimerDomains" placeholder="Domains, comma separated (e.g. instagram.com, tiktok.com)">
+                    <input type="text" id="newTimerExclusions" placeholder="Excluded Domains, comma separated (optional, e.g. youtube.com)">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="newTimerLimit" min="-1" placeholder="Daily Limit (Minutes, e.g. 15)" style="flex:1;">
+                        <button id="addCustomTimerBtn" style="margin:0; padding:8px 16px;">Add Group Timer</button>
+                    </div>
+                </div>
+                <p id="newTimerStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+        </section>
+
+        <!-- CLASSIFICATIONS TAB -->
+        <section class="tab-section" id="tab-classifications">
+            <h3>Website Classifications</h3>
+            <p class="subtitle">Categorize websites to control how they are tracked and whether their content is analyzed.</p>
+
+            <div style="background:rgba(15,23,42,0.5); padding:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.15); margin-bottom:24px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="plus-circle" style="width:16px; height:16px; color:#FF4081;"></i>Add Custom Website Classification</h4>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <input type="text" id="newClassifyDomain" placeholder="e.g. linkedin.com">
+                    <div style="display:flex; gap:8px;">
+                        <select id="newClassifyCategory" style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.6); color:#e5e7eb; font-family:inherit; font-size:13px; outline:none; transition:border-color 0.2s;">
+                            <option value="productive">Productive (Bypass Analysis, Unlimited Access)</option>
+                            <option value="unproductive">Unproductive (Bypass Analysis, Counts as Unproductive)</option>
+                            <option value="depends">Depends on Content (Analyze Content to Decide)</option>
+                        </select>
+                        <button id="addClassifyBtn" style="margin:0; padding:8px 16px;">Add Website</button>
+                    </div>
+                </div>
+                <p id="newClassifyStatus" class="status-msg" style="margin-top:6px; min-height:unset;"></p>
+            </div>
+
+            <!-- Suggestions section -->
+            <div id="classificationSuggestionsCard" style="display:none; background:rgba(255,64,129,0.08); border:1px solid rgba(255,64,129,0.25); padding:16px; border-radius:12px; margin-bottom:24px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:#FF4081; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;"><i data-lucide="sparkles" style="width:16px; height:16px;"></i>Pending Classification Suggestions</h4>
+                <small style="color:#e5e7eb; margin-bottom:12px; display:block;">These websites are currently uncategorized but have significant browsing time. Categorize them to configure tracking:</small>
+                <div id="classificationSuggestionsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+
+            <h4>Categorized Websites</h4>
+            <div style="margin-top:10px; margin-bottom:12px;">
+                <input type="text" id="classifySearch" placeholder="Search categorized websites..." style="width:100%;">
+            </div>
+            <div class="scrollable-list-container" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                <ul id="categorizedWebsitesList" style="margin-top: 0;"></ul>
+            </div>
+        </section>
+
+        <!-- REPORTS TAB -->
+        <section class="tab-section" id="tab-reports">
+            <h3>Reports</h3>
+            <p class="subtitle">Your browsing time over the last 7 days.</p>
+            <div id="reportsContent"><div class="empty-state">Loading time data...</div></div>
+            <button id="clearHistory" class="clear-btn">Clear All History</button>
+        </section>
+
+        <!-- SETTINGS TAB -->
+        <section class="tab-section" id="tab-settings">
+            <h3>Settings</h3>
+            <p class="subtitle">API key, blocking mode, and advanced classifier options.</p>
+
+            <h4>Groq API Key</h4>
+            <input type="text" id="groqApiKey" placeholder="gsk_...">
+            <small>Required for AI classification. Get one free at <a href="https://console.groq.com" target="_blank" style="color:#FF4081;">console.groq.com</a></small>
+
+            <h4>Blocking Mode</h4>
+            <div class="seg-ctrl">
+                <input type="radio" id="lenient-mode" name="mode" value="LENIENT"><label for="lenient-mode" class="seg-opt">LENIENT</label>
+                <input type="radio" id="strict-mode" name="mode" value="STRICT"><label for="strict-mode" class="seg-opt">STRICT</label>
+            </div>
+            <small id="modeDescription" style="margin-top:10px;color:#e5e7eb;font-weight:500;"></small>
+
+            <h4>Block Action</h4>
+            <div class="seg-ctrl">
+                <input type="radio" id="action-greyscale" name="blockAction" value="GREYSCALE"><label for="action-greyscale" class="seg-opt">Greyscale</label>
+                <input type="radio" id="action-rickroll" name="blockAction" value="RICKROLL"><label for="action-rickroll" class="seg-opt">Rickroll</label>
+            </div>
+
+            <h4>Classifier Sensitivity</h4>
+            <label for="heuristicDominanceRatio">Productive dominance ratio (default 2.0)</label>
+            <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="2.0" style="margin-top:6px;">
+            <small>Higher = stricter keyword matching required before a decision is made.</small>
+
+
+
+            <p id="settingsStatus" class="status-msg"></p>
+            <button id="saveSettings" style="margin-top:14px;">Save Settings</button>
+        </section>
+    </main>
+</div>
+<script src="options-reports.js"></script>
+<script src="options-intents.js"></script>
+<script src="options-blocking.js"></script>
+<script src="options-timers.js"></script>
+<script src="options-settings.js"></script>
+<script src="options-classifications.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

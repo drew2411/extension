@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Classifier - Advanced Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
+    <style>
+        /* BASE STYLES */
+        body {
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            font-family: "Quicksand", sans-serif;
+            font-weight: 400;
+            background: radial-gradient(circle at top left, #020617 0, #000000 65%);
+            color: #e5e7eb;
+            line-height: 1.5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        
+        .advanced-container {
+            display: flex;
+            background: #1A1C30;
+            border-radius: 18px;
+            box-shadow: 0 22px 48px rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            width: 720px;
+            min-height: 520px;
+            overflow: hidden;
+        }
+
+        /* SIDEBAR STYLES */
+        .sidebar {
+            width: 220px;
+            background: rgba(15, 23, 42, 0.4);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+            padding: 24px 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 0 24px 20px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: #FF4081;
+            letter-spacing: 0.05em;
+        }
+
+        .menu-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #94a3b8;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 64, 129, 0.05);
+            color: #e5e7eb;
+        }
+
+        .menu-item.active {
+            background: rgba(255, 64, 129, 0.1);
+            color: #FFFFFF;
+            border-left-color: #FF4081;
+            font-weight: 600;
+        }
+
+        /* CONTENT AREA STYLES */
+        .content-area {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            max-height: 520px;
+        }
+
+        .tab-section {
+            display: none;
+        }
+
+        .tab-section.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h3 {
+            margin: 0 0 16px 0;
+            font-size: 20px;
+            font-weight: 600;
+            color: #FFFFFF;
+        }
+
+        h4 {
+            margin: 24px 0 8px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+        }
+
+        label {
+            display: flex;
+            align-items: center;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            margin-top: 6px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background-color: rgba(15, 23, 42, 0.6);
+            color: #e5e7eb;
+            font-size: 13px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus, input[type="number"]:focus {
+            border-color: #FF4081;
+        }
+
+        small {
+            display: block;
+            margin-top: 6px;
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 9px 18px;
+            cursor: pointer;
+            border-radius: 6px; 
+            border: none;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            background-color: #FF4081;
+            color: #FFFFFF;
+            box-shadow: 0 4px 12px rgba(255, 64, 129, 0.2);
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #F81F66;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(255, 64, 129, 0.3);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 12px 0 0 0;
+        }
+
+        ul li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        ul li button {
+            margin-top: 0;
+            padding: 4px 8px;
+            font-size: 11px;
+            background-color: transparent;
+            color: #94a3b8;
+            box-shadow: none;
+            text-transform: lowercase;
+        }
+
+        ul li button:hover {
+            color: #FF4081;
+            background-color: transparent;
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* SEGMENTED CONTROL */
+        .segmented-control {
+            display: flex;
+            background-color: rgba(15, 23, 42, 0.8);
+            border-radius: 8px;
+            padding: 4px;
+            margin-top: 12px;
+        }
+
+        .segmented-control input[type="radio"] {
+            display: none; 
+        }
+
+        .segmented-control .mode-option {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border-radius: 6px;
+            color: #94a3b8;
+        }
+
+        .segmented-control input[type="radio"]:checked + .mode-option {
+            background-color: #FFFFFF;
+            color: #1A1C30;
+        }
+
+        /* TOGGLE SWITCHES */
+        .toggle-switch-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            margin-top: 12px;
+            justify-content: space-between; 
+        }
+
+        .toggle-label-text {
+            flex-grow: 1;
+            margin-right: 15px; 
+        }
+
+        .toggle-switch-container input[type="checkbox"] {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        .slider {
+            flex-shrink: 0;
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background-color: #444760;
+            transition: .4s;
+            border-radius: 34px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #D0D0D0;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch-container input:checked + .slider {
+            background-color: #42A5F5;
+        }
+
+        .toggle-switch-container input:checked + .slider:before {
+            transform: translateX(20px);
+            background-color: #FFFFFF;
+        }
+
+        /* Visual Timer Styles */
+        .timer-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+
+        .timer-circle-box {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+        }
+
+        .timer-circle-box svg {
+            transform: rotate(-90deg);
+        }
+
+        .timer-circle-bg {
+            fill: none;
+            stroke: rgba(148, 163, 184, 0.1);
+            stroke-width: 3;
+        }
+
+        .timer-circle-progress {
+            fill: none;
+            stroke: #FF4081;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100;
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        .timer-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .timer-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+        }
+
+        .timer-value {
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: #FFFFFF;
+        }
+
+        /* CUSTOM SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.3);
+        }
+
+        /* REPORTS STYLES */
+        .stats-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #94a3b8;
+        }
+        .chart-section {
+            margin-bottom: 24px;
+        }
+        .chart-section h4 {
+            margin: 0 0 12px 0;
+        }
+        .bar-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .bar-label {
+            width: 130px;
+            font-size: 12px;
+            color: #e5e7eb;
+            text-align: right;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .bar-track {
+            flex: 1;
+            height: 22px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        .bar-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+            min-width: 2px;
+        }
+        .bar-time {
+            width: 60px;
+            font-size: 11px;
+            color: #94a3b8;
+            font-family: monospace;
+            flex-shrink: 0;
+        }
+        .weekly-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            height: 140px;
+            padding: 0 4px;
+        }
+        .weekly-bar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        .weekly-bar-fill {
+            width: 100%;
+            border-radius: 6px 6px 0 0;
+            transition: height 0.5s ease;
+            min-height: 2px;
+        }
+        .weekly-bar-label {
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .weekly-bar-value {
+            font-size: 10px;
+            color: #e5e7eb;
+            font-family: monospace;
+        }
+        .site-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .site-table th {
+            text-align: left;
+            padding: 8px 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        }
+        .site-table td {
+            padding: 8px 10px;
+            color: #e5e7eb;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+        }
+        .site-table td:not(:first-child) {
+            font-family: monospace;
+            text-align: right;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .clear-btn {
+            margin-top: 16px;
+            background: transparent !important;
+            color: #94a3b8 !important;
+            border: 1px solid rgba(148, 163, 184, 0.3) !important;
+            box-shadow: none !important;
+            font-size: 11px !important;
+        }
+        .clear-btn:hover {
+            color: #FF4081 !important;
+            border-color: #FF4081 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="advanced-container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>SETTINGS</h2>
+            </div>
+            <div class="menu-item active" data-tab="mode">Mode</div>
+            <div class="menu-item" data-tab="homepage">Homepage Blocking</div>
+            <div class="menu-item" data-tab="website">Website Blocking</div>
+            <div class="menu-item" data-tab="content-timers">Content Timers</div>
+            <div class="menu-item" data-tab="classifications">Website Classifications</div>
+            <div class="menu-item" data-tab="advanced">Advanced Settings</div>
+            <div class="menu-item" data-tab="reports">Reports</div>
+        </nav>
+
+        <main class="content-area">
+            <!-- MODE TAB -->
+            <section class="tab-section active" id="tab-mode">
+                <h3>Blocking Mode</h3>
+                <p style="font-size: 13px; color: #94a3b8;">Choose how strictly the classifier filters content.</p>
+                
+                <div class="segmented-control" id="modeOptions">
+                    <input type="radio" id="strict-mode" name="mode" value="STRICT" checked>
+                    <label for="strict-mode" class="mode-option">STRICT</label>
+                    <input type="radio" id="lenient-mode" name="mode" value="LENIENT">
+                    <label for="lenient-mode" class="mode-option">LENIENT</label>
+                </div>
+                <small id="modeDescription" style="margin-top: 12px; font-weight: 500; color: #e5e7eb;">
+                    STRICT &mdash; only allow explicitly productive content
+                </small>
+            </section>
+
+            <section class="tab-section" id="tab-homepage">
+                <h3>Homepage Blocking</h3>
+                <small>Set daily time limits for homepage domains. <b>0 minutes</b> means always blocked, <b>-1</b> means no limit.</small>
+                
+                <div id="homepageListContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;"></div>
+                
+                <!-- Add custom homepage form -->
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Homepage Limit</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newHomepageDomain" placeholder="e.g., twitter.com">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <input type="number" id="newHomepageLimit" min="-1" placeholder="Daily Limit (Minutes, e.g., 15)" style="margin-top:0;">
+                            </div>
+                            <button id="addHomepageBtn" style="margin-top: 0; padding: 9px 18px;">Add Homepage</button>
+                        </div>
+                    </div>
+                    <p id="newHomepageStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
+                </div>
+
+                <h4 style="margin-top: 30px;">Exact homepage URLs</h4>
+                <small>No time limits — these are always blocked when matched exactly.</small>
+                <div style="display: flex; gap: 8px; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <input type="text" id="exactUrlInput" placeholder="https://example.com">
+                    </div>
+                    <button id="addExactUrl" style="margin-top: 6px;">Add</button>
+                </div>
+                <ul id="exactUrlList"></ul>
+            </section>
+
+            <!-- WEBSITE BLOCKING TAB -->
+            <section class="tab-section" id="tab-website">
+                <h3>Website Blocklist</h3>
+                <small>Add URL prefixes with optional daily time limits.</small>
+                
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="strictUrlInput" placeholder="e.g., twitter.com/explore" style="flex: 2;">
+                        <input type="number" id="strictUrlLimit" min="0" placeholder="Min (0=Block)" style="flex: 1;">
+                    </div>
+                    <button id="addStrictUrl" style="width: 100%;">Add Site with Limit</button>
+                </div>
+                <ul id="strictUrlList"></ul>
+            </section>
+
+            <!-- CONTENT TIMERS TAB -->            <section class="tab-section" id="tab-content-timers">
+                <h3>Content Timers</h3>
+                <small>Set daily limits for <b>unproductive</b> content on YouTube, Reddit, or other domains you choose. Only content classified as entertainment counts toward the timer.</small>
+
+                <!-- Dynamically populated timers -->
+                <div id="timersListContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;"></div>
+
+                <!-- Add custom timer form (Advanced style) -->
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Content Timer</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newTimerName" placeholder="Timer Name (e.g., Social Media)">
+                        <input type="text" id="newTimerDomains" placeholder="Domains, comma separated (e.g., instagram.com, facebook.com)">
+                        <input type="text" id="newTimerExclusions" placeholder="Excluded Domains, comma separated (optional, e.g., youtube.com)">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <input type="number" id="newTimerLimit" min="-1" placeholder="Daily Limit (Minutes, e.g., 15)" style="margin-top:0;">
+                            </div>
+                            <button id="addCustomTimerBtn" style="margin-top: 0; padding: 9px 18px;">Add Timer</button>
+                        </div>
+                    </div>
+                    <p id="newTimerStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
+                </div>
+            </section>
+
+            <!-- ADVANCED SETTINGS TAB -->
+            <section class="tab-section" id="tab-advanced">
+                <h3>Advanced Settings</h3>
+                
+                <h4>Block Action</h4>
+                <p style="font-size: 13px; color: #94a3b8;">Action to take when a website is blocked.</p>
+                <div class="segmented-control" id="blockActionOptions">
+                    <input type="radio" id="action-rickroll" name="blockAction" value="RICKROLL" checked>
+                    <label for="action-rickroll" class="mode-option">Rickroll</label>
+                    <input type="radio" id="action-greyscale" name="blockAction" value="GREYSCALE">
+                    <label for="action-greyscale" class="mode-option">Greyscale</label>
+                </div>
+
+                <h4 style="margin-top: 30px;">Classifier Sensitivity</h4>
+                <label for="heuristicDominanceRatio">Productive dominance ratio</label>
+                <input type="number" id="heuristicDominanceRatio" min="1" step="0.1" placeholder="e.g., 2.0">
+                <small>A lower score allows more videos through the filter.</small>
+            </section>
+
+            <!-- CLASSIFICATIONS TAB -->
+            <section class="tab-section" id="tab-classifications">
+                <h3>Website Classifications</h3>
+                <small>Categorize websites to control how they are tracked and whether their content is analyzed.</small>
+
+                <div style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.15); margin-top: 20px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #fff; font-size: 13px; text-transform: uppercase;">Add Custom Website Classification</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="text" id="newClassifyDomain" placeholder="e.g., linkedin.com" style="margin-top:0;">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <select id="newClassifyCategory" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.3); background-color: rgba(15, 23, 42, 0.6); color: #e5e7eb; font-size: 13px; outline: none; transition: border-color 0.2s;">
+                                    <option value="productive">Productive (Bypass Analysis, Unlimited Access)</option>
+                                    <option value="unproductive">Unproductive (Bypass Analysis, Counts as Unproductive)</option>
+                                    <option value="depends">Depends on Content (Analyze Content to Decide)</option>
+                                </select>
+                            </div>
+                            <button id="addClassifyBtn" style="margin-top: 0; padding: 9px 18px;">Add Website</button>
+                        </div>
+                    </div>
+                    <p id="newClassifyStatus" style="font-size: 12px; margin-top: 8px; color: #22c55e; min-height: unset; display: none;"></p>
+                </div>
+
+                <!-- Suggestions card -->
+                <div id="classificationSuggestionsCard" style="display:none; background: rgba(255, 64, 129, 0.08); border: 1px solid rgba(255, 64, 129, 0.25); padding: 16px; border-radius: 12px; margin-top: 24px;">
+                    <h4 style="margin-top: 0; margin-bottom: 8px; color: #FF4081; font-size: 13px; text-transform: uppercase;">Pending Suggestions</h4>
+                    <small style="color: #e5e7eb; margin-bottom: 12px; display: block; margin-top:0;">These websites are uncategorized but have significant browsing time. Categorize them to configure tracking:</small>
+                    <div id="classificationSuggestionsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <h4 style="margin-top: 30px;">Categorized Websites</h4>
+                <div style="margin-top: 10px; margin-bottom: 12px;">
+                    <input type="text" id="classifySearch" placeholder="Search categorized websites..." style="margin-top:0;">
+                </div>
+                <div class="scrollable-list-container" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                    <ul id="categorizedWebsitesList" style="margin-top: 0;"></ul>
+                </div>
+            </section>
+
+            <!-- REPORTS TAB -->
+            <section class="tab-section" id="tab-reports">
+                <h3>Reports</h3>
+                <small>See how you're spending your time across websites.</small>
+
+                <div id="reportsContent">
+                    <div class="empty-state">Loading time data...</div>
+                </div>
+
+                <button id="clearHistory" class="clear-btn">Clear All History</button>
+            </section>
+        </main>
+    </div>
+
+    <script src="advanced.js"></script>
+</body>
+</html>

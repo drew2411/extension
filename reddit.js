@@ -1,116 +1,123 @@
-console.log("Reddit content script injected and running.");
-
-const ANALYSIS_DELAY = 2000;
-const URL_CHECK_INTERVAL = 2000; // 2 seconds
-const RETRY_DELAY = 5000; // 5 seconds
-const MAX_RETRIES = 3;
-
-let lastProcessedUrl = "";
-let currentUrl = window.location.href;
-
-function sendMessageWithRetry(message, retries = MAX_RETRIES) {
-    console.log(`Attempting to send message (retries left: ${retries}):`, message.type);
-    chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-            const errorMessage = chrome.runtime.lastError.message;
-            if (errorMessage.includes("Receiving end does not exist") && retries > 0) {
-                console.warn(`Connection to background script failed. Retrying in ${RETRY_DELAY / 1000} seconds...`);
-                setTimeout(() => {
-                    sendMessageWithRetry(message, retries - 1);
-                }, RETRY_DELAY);
-            } else {
-                console.error(`Failed to send message after multiple retries: ${errorMessage}`, message);
-            }
-        } else {
-            console.log("Message sent successfully to background script.");
-        }
-    });
-}
-
-const extractData = () => {
-    if (window.location.href === lastProcessedUrl) {
-        console.log("URL has already been processed. Skipping extraction.");
+(function() {
+    if (typeof window.runRedditAnalysis === 'function') {
+        window.runRedditAnalysis();
         return;
     }
-    console.log(`Attempting to extract data from Reddit URL: ${window.location.href}`);
-    lastProcessedUrl = window.location.href;
-    
-    const url = window.location.href;
-    let data = { source: 'reddit', comments: [] };
 
-    try {
-        if (url.includes('/r/') && url.includes('/comments/')) {
-            console.log("Extracting from a Reddit post page.");
-            data.title = document.querySelector('h1')?.innerText;
-            data.subreddit = url.split('/r/')[1].split('/')[0];
-            
-            const postBody = document.querySelector('div[data-test-id="post-content"]');
-            if (postBody) {
-                data.content = '';
-                postBody.querySelectorAll('p').forEach(p => data.content += p.innerText + '\n');
-                data.content = data.content.trim();
-                console.log(`Extracted post content: ${data.content.substring(0, 100)}...`);
-            } else {
-                console.warn("Could not find post content body.");
-            }
+    const BLUR_FIRST_ENABLED = false;
 
-            document.querySelectorAll('div[data-testid="comment"] p').forEach(commentElement => {
-                if (data.comments.length < 5) {
-                    data.comments.push(commentElement.innerText);
+    var ANALYSIS_DELAY = 6000;
+    var lastProcessedUrl = '';
+
+    // --- Blur overlay ---
+    function showBlurOverlay() {
+        if (!BLUR_FIRST_ENABLED) return null;
+        if (document.getElementById('ext-focus-overlay')) return null;
+        const overlay = document.createElement('div');
+        overlay.id = 'ext-focus-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:opacity 0.3s;';
+        overlay.innerHTML = '<div style="color:#fff;font-size:15px;font-family:sans-serif;text-align:center;"><div style="font-size:28px;margin-bottom:10px;">🔍</div>Analyzing content...</div>';
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function removeBlurOverlay() {
+        const el = document.getElementById('ext-focus-overlay');
+        if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
+    }
+
+    // --- Comment blocker ---
+    function applyCommentMode(commentMode, isEntertainment) {
+        const shouldHide = commentMode === 'all' || (commentMode === 'productive' && !isEntertainment);
+        if (!shouldHide) return;
+        const selectors = ['#comments', 'div[data-testid="comments-page-layout"]', 'div[data-adclicklocation="comment_thread"]'];
+        let hidden = false;
+        for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+                el.style.display = 'none';
+                if (!document.getElementById('ext-comments-hidden')) {
+                    const placeholder = document.createElement('div');
+                    placeholder.id = 'ext-comments-hidden';
+                    placeholder.style.cssText = 'padding:20px;color:#aaa;text-align:center;font-style:italic;font-family:sans-serif;font-size:14px;';
+                    placeholder.textContent = 'Comments hidden to maintain focus.';
+                    el.insertAdjacentElement('afterend', placeholder);
                 }
-            });
-            console.log(`Extracted ${data.comments.length} comments.`);
-
-        } else if (url.includes('/r/')) {
-            console.log("Extracting from a subreddit homepage.");
-            data.subreddit = url.split('/r/')[1].split('/')[0];
-            data.title = `Subreddit: r/${data.subreddit}`;
-
-            const sidebar = document.querySelector('div[data-testid="frontpage-sidebar"]');
-            if (sidebar) {
-                const descriptionElement = sidebar.querySelector('p');
-                data.description = descriptionElement ? descriptionElement.innerText : '';
-                console.log(`Extracted subreddit description: ${data.description}`);
+                hidden = true;
+                break;
             }
-
-            let postTitles = [];
-            document.querySelectorAll('h3[id^="post-title-"]').forEach(titleElement => {
-                postTitles.push(titleElement.innerText);
-            });
-            data.content = postTitles.join('\n');
-            console.log(`Extracted ${postTitles.length} post titles from the homepage.`);
         }
+    }
 
-        if (data.subreddit) {
-            console.log("Successfully extracted data from reddit.js:", data);
-            sendMessageWithRetry({ type: 'contentData', data: data });
+    function sendMessageWithRetry(message, retries = 3) {
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+                const err = chrome.runtime.lastError.message;
+                if (err.includes('Receiving end does not exist') && retries > 0) {
+                    setTimeout(() => sendMessageWithRetry(message, retries - 1), 5000);
+                }
+            }
+        });
+    }
+
+    const extractData = () => {
+        const url = window.location.href;
+        if (url === lastProcessedUrl || !url.includes('/r/')) { removeBlurOverlay(); return; }
+        lastProcessedUrl = url;
+
+        let data = { source: 'reddit', url, comments: [] };
+        data.subreddit = url.split('/r/')[1].split('/')[0];
+
+        if (url.includes('/comments/')) {
+            data.title = document.querySelector('h1')?.innerText;
+
+            // New Shreddit layout: <shreddit-post-text-body> > div[id$="-post-rtjson-content"]
+            const shredditBody = document.querySelector('shreddit-post-text-body [id$="-post-rtjson-content"]');
+            // Fallback: classic Reddit layout
+            const classicBody = document.querySelector('div[data-test-id="post-content"]');
+            const postBody = shredditBody || classicBody;
+            if (postBody) data.content = Array.from(postBody.querySelectorAll('p')).map(p => p.innerText).join('\n');
+
+            // New Shreddit comments vs classic
+            const commentPs = document.querySelectorAll('shreddit-comment p, div[data-testid="comment"] p');
+            commentPs.forEach((p, i) => { if (i < 5) data.comments.push(p.innerText); });
         } else {
-            console.log("Could not extract subreddit from URL. No data sent.");
+            data.title = `Subreddit: r/${data.subreddit}`;
+            const sidebar = document.querySelector('div[data-testid="frontpage-sidebar"]');
+            if (sidebar) { const desc = sidebar.querySelector('p'); data.description = desc ? desc.innerText : ''; }
+            const postTitles = [];
+            document.querySelectorAll('h3[id^="post-title-"]').forEach(el => postTitles.push(el.innerText));
+            data.content = postTitles.join('\n');
         }
-    } catch (error) {
-        console.error("An error occurred during Reddit data extraction:", error);
-    }
-};
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'navigation-completed') {
-        console.log(`'navigation-completed' message received. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
+        sendMessageWithRetry({ type: 'contentData', data });
+
+        // After sending, check for comment mode
+        chrome.storage.local.get(['commentMode'], ({ commentMode }) => {
+            if (!commentMode || commentMode === 'off') { removeBlurOverlay(); return; }
+            chrome.runtime.sendMessage({ type: 'getClassification', tabId: null }, () => { });
+            // Poll for classification result
+            let polls = 0;
+            const interval = setInterval(() => {
+                polls++;
+                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                    if (!tabs[0]) { clearInterval(interval); removeBlurOverlay(); return; }
+                    chrome.runtime.sendMessage({ type: 'getClassification', tabId: tabs[0].id }, (cls) => {
+                        if (cls && cls.entertainment !== undefined) {
+                            clearInterval(interval);
+                            applyCommentMode(commentMode, cls.entertainment);
+                            removeBlurOverlay();
+                        } else if (polls > 15) { clearInterval(interval); removeBlurOverlay(); }
+                    });
+                });
+            }, 1000);
+        });
+    };
+
+    window.runRedditAnalysis = () => {
+        showBlurOverlay();
         setTimeout(extractData, ANALYSIS_DELAY);
-    }
-});
+    };
 
-function handleUrlChange() {
-    console.log("URL change detected. Waiting for analysis delay before extraction.");
-    setTimeout(extractData, ANALYSIS_DELAY);
-}
-
-setInterval(() => {
-    if (window.location.href !== currentUrl) {
-        console.log(`URL changed from '${currentUrl}' to '${window.location.href}'.`);
-        currentUrl = window.location.href;
-        handleUrlChange();
-    }
-}, URL_CHECK_INTERVAL);
-
-console.log(`Initial page load. Waiting ${ANALYSIS_DELAY}ms to extract data.`);
-setTimeout(extractData, ANALYSIS_DELAY);
+    window.runRedditAnalysis();
+})();

@@ -368,15 +368,15 @@ async function startUnproductiveTimer(tabId, source) {
     await setUnproductiveSession({ tabId, source, startTime: Date.now() });
 }
 
-async function pauseUnproductiveTimer() {
+async function pauseUnproductiveTimer(enforceLimit = true) {
     const session = await getUnproductiveSession();
     if (!session) return;
     const elapsed = Math.round((Date.now() - session.startTime) / 1000);
-    if (elapsed > 0) await recordUnproductiveTime(session.source, elapsed, session.tabId);
+    if (elapsed > 0) await recordUnproductiveTime(session.source, elapsed, session.tabId, enforceLimit);
     await setUnproductiveSession(null);
 }
 
-async function recordUnproductiveTime(source, seconds, tabId) {
+async function recordUnproductiveTime(source, seconds, tabId, enforceLimit = true) {
     const data = await chrome.storage.local.get(['unproductiveTimers']);
     const timers = data.unproductiveTimers || {
         overall: { id: 'overall', name: 'Overall Limit', domains: [], excludedDomains: [], limitMinutes: -1, secondsUsedToday: 0, isOverall: true },
@@ -403,6 +403,8 @@ async function recordUnproductiveTime(source, seconds, tabId) {
     timers.overall.secondsUsedToday = totalSum;
     
     await chrome.storage.local.set({ unproductiveTimers: timers });
+    
+    if (!enforceLimit) return;
     
     // Check specific timer limit
     if (source && timers[source]) {
@@ -491,7 +493,7 @@ async function recordTime(domain, seconds, url, tabId) {
 // --- Tab / Window Events ---
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     await stopSession();
-    await pauseUnproductiveTimer();
+    await pauseUnproductiveTimer(false);
     try {
         const tab = await chrome.tabs.get(activeInfo.tabId);
         if (tab && tab.url) {
@@ -505,7 +507,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
     if (windowId === chrome.windows.WINDOW_ID_NONE) {
         await stopSession();
-        await pauseUnproductiveTimer();
+        await pauseUnproductiveTimer(false);
     } else {
         try {
             const [tab] = await chrome.tabs.query({ active: true, windowId });
@@ -670,7 +672,7 @@ async function evaluateTabRules(tabId, tab) {
         await chrome.storage.session.set({ [tabId]: { status: 'allowed', reasoning: reason, key: getDomain(url), timestamp: Date.now() } });
         const unproductiveSession = await getUnproductiveSession();
         if (unproductiveSession && unproductiveSession.tabId === tabId) {
-            await pauseUnproductiveTimer();
+            await pauseUnproductiveTimer(false);
         }
     }
 }
@@ -684,7 +686,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (changeInfo.url !== rickrollUrl) await startSession(tabId, changeInfo.url);
     }
     if (unproductiveSession && unproductiveSession.tabId === tabId && changeInfo.url) {
-        await pauseUnproductiveTimer();
+        await pauseUnproductiveTimer(false);
     }
     if (changeInfo.status !== 'complete' || !tab.url || tab.url === rickrollUrl) return;
 
@@ -695,7 +697,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     if (!details.url || details.url === rickrollUrl) return;
     const unproductiveSession = await getUnproductiveSession();
-    if (unproductiveSession && unproductiveSession.tabId === details.tabId) await pauseUnproductiveTimer();
+    if (unproductiveSession && unproductiveSession.tabId === details.tabId) await pauseUnproductiveTimer(false);
     const activeSession = await getActiveSession();
     if (activeSession && activeSession.tabId === details.tabId) {
         await stopSession();
@@ -873,13 +875,13 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
 
     // 1. Check overall timer limit
     if (overall) {
-        const blocked = await checkAndEnforceLimit(tabId, 'overall', overall.limitMinutes, overall.secondsUsedToday, "Overall Content Limit", intentId);
+        const blocked = await checkAndEnforceLimit(tabId, 'overall', overall.limitMinutes, overall.secondsUsedToday, `Overall Limit: ${reasoning}`, intentId);
         if (blocked) return;
     }
 
     // 2. If there is no content timer for that website (timerId is null or timer not found)
     if (!timerId || !timer) {
-        await blockAndRedirect(tabId, blockKey, "Unproductive — no content timer configured", true, intentId);
+        await blockAndRedirect(tabId, blockKey, `No timer configured: ${reasoning}`, true, intentId);
         return;
     }
 
@@ -890,7 +892,7 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
         return;
     }
 
-    const blocked = await checkAndEnforceLimit(tabId, timer.id, timer.limitMinutes, timer.secondsUsedToday, `Content timer "${timer.name}"`, intentId);
+    const blocked = await checkAndEnforceLimit(tabId, timer.id, timer.limitMinutes, timer.secondsUsedToday, `Timer "${timer.name}": ${reasoning}`, intentId);
     if (blocked) return;
 
     // Timer not yet exceeded — allow but track

@@ -14,6 +14,50 @@ const MAX_DISCOVERY_BUFFER = 50;
 // Rickroll loop guard: tabId -> timestamp
 const recentlyBlockedTabs = new Map();
 
+// --- Tab URL History and Grayscale Cleanups ---
+async function getTabLastUrl(tabId) {
+    const res = await chrome.storage.session.get([`lastUrl_${tabId}`]);
+    return res[`lastUrl_${tabId}`] || null;
+}
+async function setTabLastUrl(tabId, url) {
+    await chrome.storage.session.set({ [`lastUrl_${tabId}`]: url });
+}
+async function clearGrayscale(tabId) {
+    try {
+        await chrome.scripting.removeCSS({
+            target: { tabId },
+            css: "html { filter: grayscale(100%) !important; pointer-events: none !important; }"
+        });
+    } catch (e) { /* ignore */ }
+}
+function isTimerExceeded(domain, unproductiveTimers) {
+    if (!unproductiveTimers) return null;
+    const overall = unproductiveTimers.overall;
+    if (overall && overall.limitMinutes >= 0 && overall.secondsUsedToday >= overall.limitMinutes * 60) {
+        return "Overall Limit";
+    }
+    const timerId = findTimerForDomain(domain, unproductiveTimers);
+    if (timerId && unproductiveTimers[timerId]) {
+        const timer = unproductiveTimers[timerId];
+        if (timer && timer.limitMinutes >= 0 && timer.secondsUsedToday >= timer.limitMinutes * 60) {
+            return `Timer "${timer.name}"`;
+        }
+    }
+    return null;
+}
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+    await chrome.storage.session.remove([`lastUrl_${tabId}`]);
+    const unproductiveSession = await getUnproductiveSession();
+    if (unproductiveSession && unproductiveSession.tabId === tabId) {
+        await pauseUnproductiveTimer(false);
+    }
+    const activeSession = await getActiveSession();
+    if (activeSession && activeSession.tabId === tabId) {
+        await stopSession();
+    }
+});
+
 // --- Helpers ---
 // --- Session State Helpers (persists across Service Worker suspension) ---
 async function getActiveSession() {
@@ -591,6 +635,50 @@ async function maybeResumeUnproductiveTimer(tabId, url) {
     }
 }
 
+// --- Check if URL is blocked (loop guard helper) ---
+function checkIsUrlBlockedSync(url, stored) {
+    const domain = getDomain(url);
+    if (Array.isArray(stored.homepageBlocklist)) {
+        const homeEntry = stored.homepageBlocklist.find(item => homepageRuleMatchesItem(url, item));
+        if (homeEntry && homeEntry.limitMinutes >= 0) {
+            if (homeEntry.limitMinutes === 0 || homeEntry.secondsUsedToday >= homeEntry.limitMinutes * 60) return true;
+        }
+    }
+    const strictEntry = (stored.strictUrlBlocklist || []).find(item => strictRuleMatchesItem(url, item));
+    if (strictEntry && strictEntry.limitMinutes >= 0) {
+        if (strictEntry.limitMinutes === 0 || strictEntry.secondsUsedToday >= strictEntry.limitMinutes * 60) return true;
+    }
+    const exactEntry = (stored.exactUrlBlocklist || []).find(item => exactUrlMatchesItem(url, item));
+    if (exactEntry) return true;
+
+    const tempBlockKey = getCreatorIdentifier({ url });
+    if (tempBlockKey) {
+        const isTempWhitelisted = stored.tempWhitelist?.[tempBlockKey] && 
+            (Date.now() - stored.tempWhitelist[tempBlockKey].timestamp < TEN_MINUTES_MS);
+        if (!isTempWhitelisted && stored.blocklist?.includes(tempBlockKey)) return true;
+    }
+
+    const classification = getDomainClassification(url, stored.domainClassifications);
+    if (classification === 'unproductive') {
+        const timerId = findTimerForDomain(domain, stored.unproductiveTimers || {});
+        const timer = timerId ? stored.unproductiveTimers?.[timerId] : null;
+        const overall = stored.unproductiveTimers?.overall;
+        if (overall && overall.limitMinutes >= 0 && overall.secondsUsedToday >= overall.limitMinutes * 60) return true;
+        if (!timerId || !timer) return true; // No timer configured = blocked
+        if (timer.limitMinutes >= 0 && timer.secondsUsedToday >= timer.limitMinutes * 60) return true;
+    }
+    return false;
+}
+
+async function handlePermanentBlocklist(tabId, blockKey, domain, unproductiveTimers) {
+    const exceededName = isTimerExceeded(domain, unproductiveTimers);
+    let reason = "This content is on your blocklist.";
+    if (exceededName) {
+        reason += ` (Content timer limit reached: ${exceededName})`;
+    }
+    await blockAndRedirect(tabId, blockKey, reason, true, null);
+}
+
 // --- Rule Evaluation helper ---
 async function evaluateTabRules(tabId, tab) {
     if (!tab.url || tab.url === rickrollUrl) return;
@@ -604,13 +692,27 @@ async function evaluateTabRules(tabId, tab) {
     const url = tab.url;
     
     // Get whitelist and check
-    const { domainClassifications, homepageBlocklist, strictUrlBlocklist, exactUrlBlocklist, youtubeLimit, redditLimit, unproductiveTimers } = await chrome.storage.local.get([
-        'domainClassifications', 'homepageBlocklist', 'strictUrlBlocklist', 'exactUrlBlocklist', 'youtubeLimit', 'redditLimit', 'unproductiveTimers'
+    const stored = await chrome.storage.local.get([
+        'domainClassifications', 'homepageBlocklist', 'strictUrlBlocklist', 'exactUrlBlocklist', 'youtubeLimit', 'redditLimit', 'unproductiveTimers', 'blocklist', 'tempWhitelist'
     ]);
 
+    // Rickroll loop guard: if coming back from rickroll to a blocked page, escape loop
+    const lastUrl = await getTabLastUrl(tabId);
+    if (lastUrl === rickrollUrl) {
+        const isBlocked = checkIsUrlBlockedSync(url, stored);
+        if (isBlocked) {
+            await setTabLastUrl(tabId, url);
+            try {
+                await chrome.tabs.goBack(tabId);
+                return;
+            } catch (e) {}
+        }
+    }
+    await setTabLastUrl(tabId, url);
+
     // Dynamic Homepage Blocklist checks
-    if (Array.isArray(homepageBlocklist)) {
-        const homeEntry = homepageBlocklist.find(item => homepageRuleMatchesItem(url, item));
+    if (Array.isArray(stored.homepageBlocklist)) {
+        const homeEntry = stored.homepageBlocklist.find(item => homepageRuleMatchesItem(url, item));
         if (homeEntry && homeEntry.limitMinutes >= 0) {
             const blockKey = homeEntry.name || homeEntry.domain;
             const blocked = await checkAndEnforceLimit(tabId, blockKey, homeEntry.limitMinutes, homeEntry.secondsUsedToday, `Homepage blocklist for ${blockKey}`);
@@ -622,22 +724,22 @@ async function evaluateTabRules(tabId, tab) {
     const isYoutubeHome = url === 'https://www.youtube.com/' || url === 'https://www.youtube.com';
     const isRedditHome  = url === 'https://www.reddit.com/'  || url === 'https://www.reddit.com';
 
-    if (isYoutubeHome && youtubeLimit && youtubeLimit.limitMinutes >= 0) {
-        const blocked = await checkAndEnforceLimit(tabId, 'youtube_home_fallback', youtubeLimit.limitMinutes, youtubeLimit.secondsUsedToday, "YouTube Homepage");
+    if (isYoutubeHome && stored.youtubeLimit && stored.youtubeLimit.limitMinutes >= 0) {
+        const blocked = await checkAndEnforceLimit(tabId, 'youtube_home_fallback', stored.youtubeLimit.limitMinutes, stored.youtubeLimit.secondsUsedToday, "YouTube Homepage");
         if (blocked) return;
     }
-    if (isRedditHome && redditLimit && redditLimit.limitMinutes >= 0) {
-        const blocked = await checkAndEnforceLimit(tabId, 'reddit_home_fallback', redditLimit.limitMinutes, redditLimit.secondsUsedToday, "Reddit Homepage");
+    if (isRedditHome && stored.redditLimit && stored.redditLimit.limitMinutes >= 0) {
+        const blocked = await checkAndEnforceLimit(tabId, 'reddit_home_fallback', stored.redditLimit.limitMinutes, stored.redditLimit.secondsUsedToday, "Reddit Homepage");
         if (blocked) return;
     }
 
-    const strictEntry = (strictUrlBlocklist || []).find(item => strictRuleMatchesItem(url, item));
+    const strictEntry = (stored.strictUrlBlocklist || []).find(item => strictRuleMatchesItem(url, item));
     if (strictEntry && strictEntry.limitMinutes >= 0) {
         const blockKey = strictEntry.name || strictEntry.url;
         const blocked = await checkAndEnforceLimit(tabId, blockKey, strictEntry.limitMinutes, strictEntry.secondsUsedToday, `Strict URL blocklist for ${blockKey}`);
         if (blocked) return;
     }
-    const exactEntry = (exactUrlBlocklist || []).find(item => exactUrlMatchesItem(url, item));
+    const exactEntry = (stored.exactUrlBlocklist || []).find(item => exactUrlMatchesItem(url, item));
     if (exactEntry) {
         const blockKey = typeof exactEntry === 'string' ? exactEntry : exactEntry.name;
         await blockAndRedirect(tabId, blockKey, "Exact URL blocklist", true, null);
@@ -647,25 +749,23 @@ async function evaluateTabRules(tabId, tab) {
     // Creator-level blocklist bypass check (before script injection)
     const tempBlockKey = getCreatorIdentifier({ url });
     if (tempBlockKey && tempBlockKey !== getDomain(url)) {
-        const stored = await chrome.storage.local.get(['blocklist', 'tempWhitelist']);
         const isTempWhitelisted = stored.tempWhitelist?.[tempBlockKey] && 
             (Date.now() - stored.tempWhitelist[tempBlockKey].timestamp < TEN_MINUTES_MS);
         if (!isTempWhitelisted && stored.blocklist?.includes(tempBlockKey)) {
             const domain = getDomain(url);
-            const timerId = findTimerForDomain(domain, unproductiveTimers || {});
-            await handleUnproductiveClassification(tabId, tempBlockKey, "This content is on your blocklist.", timerId, null);
+            await handlePermanentBlocklist(tabId, tempBlockKey, domain, stored.unproductiveTimers);
             return;
         }
     }
 
-    const classification = getDomainClassification(url, domainClassifications);
+    const classification = getDomainClassification(url, stored.domainClassifications);
 
     if (classification === 'depends') {
         await chrome.storage.session.set({ [tabId]: { status: 'classifying', key: getDomain(url), timestamp: Date.now() } });
         injectContentScript(tabId, url);
     } else if (classification === 'unproductive') {
         const blockKey = getDomain(url);
-        const timerId = findTimerForDomain(blockKey, unproductiveTimers || {});
+        const timerId = findTimerForDomain(blockKey, stored.unproductiveTimers || {});
         await handleUnproductiveClassification(tabId, blockKey, 'Unproductive Website (Categorized)', timerId, null);
     } else {
         const reason = classification === 'productive' ? 'Productive Website (Categorized)' : 'Uncategorized Website (Allowed)';
@@ -674,6 +774,7 @@ async function evaluateTabRules(tabId, tab) {
         if (unproductiveSession && unproductiveSession.tabId === tabId) {
             await pauseUnproductiveTimer(false);
         }
+        await clearGrayscale(tabId);
     }
 }
 
@@ -688,6 +789,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (unproductiveSession && unproductiveSession.tabId === tabId && changeInfo.url) {
         await pauseUnproductiveTimer(false);
     }
+    if (changeInfo.url) {
+        await clearGrayscale(tabId);
+        await setTabLastUrl(tabId, changeInfo.url);
+    }
     if (changeInfo.status !== 'complete' || !tab.url || tab.url === rickrollUrl) return;
 
     await evaluateTabRules(tabId, tab);
@@ -696,6 +801,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     if (!details.url || details.url === rickrollUrl) return;
+    await clearGrayscale(details.tabId);
+    await setTabLastUrl(details.tabId, details.url);
     const unproductiveSession = await getUnproductiveSession();
     if (unproductiveSession && unproductiveSession.tabId === details.tabId) await pauseUnproductiveTimer(false);
     const activeSession = await getActiveSession();
@@ -818,12 +925,13 @@ async function handleContentData(data, tabId) {
     // Temp whitelist check
     if (stored.tempWhitelist?.[blockKey] && (Date.now() - stored.tempWhitelist[blockKey].timestamp < TEN_MINUTES_MS)) {
         chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: "Manually unblocked", key: blockKey, timestamp: Date.now() } });
+        await clearGrayscale(tabId);
         return;
     }
 
     // Permanent blocklist check
     if (stored.blocklist?.includes(blockKey)) {
-        await handleUnproductiveClassification(tabId, blockKey, "This content is on your blocklist.", timerId, null);
+        await handlePermanentBlocklist(tabId, blockKey, domain, stored.unproductiveTimers);
         return;
     }
 
@@ -832,6 +940,7 @@ async function handleContentData(data, tabId) {
     if (heuristic.decision === 'allow') {
         chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: heuristic.reason, key: blockKey, timestamp: Date.now() } });
         await appendToDiscoveryBuffer(title || blockKey);
+        await clearGrayscale(tabId);
         return;
     } else if (heuristic.decision === 'block') {
         await appendToDiscoveryBuffer(title || blockKey);
@@ -846,6 +955,7 @@ async function handleContentData(data, tabId) {
         const res = await classifyStrictWithGroq(data, stored.groqApiKey, stored.productiveContent);
         if (res && res.productive_match) {
             chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: res.reasoning, key: blockKey, timestamp: Date.now() } });
+            await clearGrayscale(tabId);
         } else {
             const reason = res?.reasoning || "Strict mode: no productive match.";
             await addToBlocklist(blockKey);
@@ -861,6 +971,7 @@ async function handleContentData(data, tabId) {
             return;
         } else {
             chrome.storage.session.set({ [tabId]: { entertainment: false, reasoning: res?.reasoning || "Allowed", key: blockKey, timestamp: Date.now() } });
+            await clearGrayscale(tabId);
         }
     }
     await appendToDiscoveryBuffer(title || blockKey);
@@ -889,6 +1000,7 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
     if (timer.limitMinutes < 0) {
         await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning: 'Allowed (no specific timer limit)', key: blockKey, timestamp: Date.now(), timerId } });
         await startUnproductiveTimer(tabId, timerId);
+        await clearGrayscale(tabId);
         return;
     }
 
@@ -898,11 +1010,19 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
     // Timer not yet exceeded — allow but track
     await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key: blockKey, timestamp: Date.now(), timerId } });
     await startUnproductiveTimer(tabId, timerId);
+    await clearGrayscale(tabId);
 }
 
 // --- Block and Redirect ---
 // permanent=true → add to blocklist (explicit block). permanent=false → day-scoped via timer counter only.
 async function blockAndRedirect(tabId, key, reasoning, permanent = false, intentId = null) {
+    const lastUrl = await getTabLastUrl(tabId);
+    if (lastUrl === rickrollUrl) {
+        try {
+            await chrome.tabs.goBack(tabId);
+            return;
+        } catch (e) {}
+    }
     if (permanent) await addToBlocklist(key);
     if (intentId) await appendToShadowList(key, intentId);
     await chrome.storage.session.set({ [tabId]: { entertainment: true, reasoning, key, timestamp: Date.now() } });

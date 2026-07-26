@@ -435,6 +435,12 @@ async function recordUnproductiveTime(source, seconds, tabId, enforceLimit = tru
     
     if (source && timers[source]) {
         timers[source].secondsUsedToday += seconds;
+        if (timers[source].limitMinutes > 0) {
+            const maxSec = timers[source].limitMinutes * 60;
+            if (timers[source].secondsUsedToday > maxSec) {
+                timers[source].secondsUsedToday = maxSec;
+            }
+        }
     }
     
     // Calculate overall time as the sum of all specific timers (excluding overall itself)
@@ -445,6 +451,12 @@ async function recordUnproductiveTime(source, seconds, tabId, enforceLimit = tru
         }
     }
     timers.overall.secondsUsedToday = totalSum;
+    if (timers.overall.limitMinutes > 0) {
+        const maxOverallSec = timers.overall.limitMinutes * 60;
+        if (timers.overall.secondsUsedToday > maxOverallSec) {
+            timers.overall.secondsUsedToday = maxOverallSec;
+        }
+    }
     
     await chrome.storage.local.set({ unproductiveTimers: timers });
     
@@ -489,6 +501,9 @@ async function recordTime(domain, seconds, url, tabId) {
         for (const item of data.homepageBlocklist) {
             if (homepageRuleMatchesItem(url, item) && item.limitMinutes >= 0) {
                 item.secondsUsedToday += seconds;
+                if (item.limitMinutes > 0 && item.secondsUsedToday > item.limitMinutes * 60) {
+                    item.secondsUsedToday = item.limitMinutes * 60;
+                }
                 const blockKey = item.name || item.domain;
                 const blocked = await checkAndEnforceLimit(tabId, blockKey, item.limitMinutes, item.secondsUsedToday, `Homepage blocklist for ${blockKey}`);
                 if (blocked) break;
@@ -501,6 +516,9 @@ async function recordTime(domain, seconds, url, tabId) {
     const isYoutubeHome = url === 'https://www.youtube.com/' || url === 'https://www.youtube.com';
     if (isYoutubeHome && data.youtubeLimit && data.youtubeLimit.limitMinutes >= 0) {
         data.youtubeLimit.secondsUsedToday += seconds;
+        if (data.youtubeLimit.limitMinutes > 0 && data.youtubeLimit.secondsUsedToday > data.youtubeLimit.limitMinutes * 60) {
+            data.youtubeLimit.secondsUsedToday = data.youtubeLimit.limitMinutes * 60;
+        }
         storageUpdate.youtubeLimit = data.youtubeLimit;
         const blocked = await checkAndEnforceLimit(tabId, 'youtube_home_fallback', data.youtubeLimit.limitMinutes, data.youtubeLimit.secondsUsedToday, "YouTube Homepage");
         if (blocked) return;
@@ -510,6 +528,9 @@ async function recordTime(domain, seconds, url, tabId) {
     const isRedditHome = url === 'https://www.reddit.com/' || url === 'https://www.reddit.com';
     if (isRedditHome && data.redditLimit && data.redditLimit.limitMinutes >= 0) {
         data.redditLimit.secondsUsedToday += seconds;
+        if (data.redditLimit.limitMinutes > 0 && data.redditLimit.secondsUsedToday > data.redditLimit.limitMinutes * 60) {
+            data.redditLimit.secondsUsedToday = data.redditLimit.limitMinutes * 60;
+        }
         storageUpdate.redditLimit = data.redditLimit;
         const blocked = await checkAndEnforceLimit(tabId, 'reddit_home_fallback', data.redditLimit.limitMinutes, data.redditLimit.secondsUsedToday, "Reddit Homepage");
         if (blocked) return;
@@ -520,6 +541,9 @@ async function recordTime(domain, seconds, url, tabId) {
         for (const item of data.strictUrlBlocklist) {
             if (strictRuleMatchesItem(url, item) && item.limitMinutes >= 0) {
                 item.secondsUsedToday += seconds;
+                if (item.limitMinutes > 0 && item.secondsUsedToday > item.limitMinutes * 60) {
+                    item.secondsUsedToday = item.limitMinutes * 60;
+                }
                 const blockKey = item.name || item.url;
                 const blocked = await checkAndEnforceLimit(tabId, blockKey, item.limitMinutes, item.secondsUsedToday, `Strict URL blocklist for ${blockKey}`);
                 if (blocked) break;
@@ -944,7 +968,6 @@ async function handleContentData(data, tabId) {
         return;
     } else if (heuristic.decision === 'block') {
         await appendToDiscoveryBuffer(title || blockKey);
-        await addToBlocklist(blockKey);
         if (heuristic.intentId) await appendToShadowList(blockKey, heuristic.intentId);
         await handleUnproductiveClassification(tabId, blockKey, heuristic.reason, timerId, heuristic.intentId);
         return;
@@ -958,7 +981,6 @@ async function handleContentData(data, tabId) {
             await clearGrayscale(tabId);
         } else {
             const reason = res?.reasoning || "Strict mode: no productive match.";
-            await addToBlocklist(blockKey);
             await handleUnproductiveClassification(tabId, blockKey, reason, timerId, null);
             return;
         }
@@ -966,7 +988,6 @@ async function handleContentData(data, tabId) {
         const res = await classifyWithGroq(data, stored.groqApiKey, stored.productiveContent, stored.unwantedContent, stored.userInstructions);
         if (res && res.entertainment) {
             const reason = res.reasoning;
-            await addToBlocklist(blockKey);
             await handleUnproductiveClassification(tabId, blockKey, reason, timerId, null);
             return;
         } else {
@@ -992,7 +1013,7 @@ async function handleUnproductiveClassification(tabId, blockKey, reasoning, time
 
     // 2. If there is no content timer for that website (timerId is null or timer not found)
     if (!timerId || !timer) {
-        await blockAndRedirect(tabId, blockKey, `No timer configured: ${reasoning}`, true, intentId);
+        await blockAndRedirect(tabId, blockKey, `No timer configured: ${reasoning}`, false, intentId);
         return;
     }
 
